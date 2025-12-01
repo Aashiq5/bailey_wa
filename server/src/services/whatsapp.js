@@ -4,8 +4,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-  downloadMediaMessage,
-  makeInMemoryStore
+  downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
@@ -25,30 +24,8 @@ class WhatsAppService {
     this.rawMessages = new Map(); // Store raw messages for download
     this.authFolder = path.join(__dirname, '../../auth_info');
     this.mediaFolder = path.join(__dirname, '../../media');
-    this.storeFile = path.join(__dirname, '../../store.json');
     this.usePairingCode = false;
     this.phoneNumber = null;
-    
-    // Create message store for syncing history
-    this.store = makeInMemoryStore({ 
-      logger: pino({ level: 'silent' }) 
-    });
-    
-    // Load store from file if exists
-    if (fs.existsSync(this.storeFile)) {
-      try {
-        this.store.readFromFile(this.storeFile);
-      } catch (e) {
-        console.log('Could not load store:', e.message);
-      }
-    }
-    
-    // Save store periodically
-    setInterval(() => {
-      try {
-        this.store.writeToFile(this.storeFile);
-      } catch (e) {}
-    }, 30000);
     
     // Create media folder
     if (!fs.existsSync(this.mediaFolder)) {
@@ -81,9 +58,6 @@ class WhatsAppService {
         generateHighQualityLinkPreview: true,
         syncFullHistory: true // Enable full history sync
       });
-      
-      // Bind store to socket
-      this.store.bind(this.sock.ev);
 
       // Handle connection updates
       this.sock.ev.on('connection.update', async (update) => {
@@ -313,44 +287,15 @@ class WhatsAppService {
   }
 
   async fetchRecentMessages() {
-    try {
-      console.log('Fetching recent messages from chats...');
-      // Get all chats from store
-      const chats = this.store.chats.all();
-      console.log(`Found ${chats.length} chats`);
-      
-      for (const chat of chats.slice(0, 50)) { // Limit to 50 chats
-        try {
-          const msgs = await this.store.loadMessages(chat.id, 20); // 20 messages per chat
-          for (const msg of msgs) {
-            if (!msg.key.fromMe && msg.message) {
-              const messageData = await this.parseMessage(msg);
-              if (!this.messages.find(m => m.id === messageData.id)) {
-                this.messages.push(messageData);
-                this.rawMessages.set(messageData.id, msg);
-              }
-            }
-          }
-        } catch (e) {
-          // Skip chats with errors
-        }
-      }
-      
-      // Sort by timestamp descending
-      this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      console.log(`Loaded ${this.messages.length} messages from history`);
-      this.io.emit('messages-loaded', { count: this.messages.length });
-    } catch (error) {
-      console.error('Error fetching recent messages:', error);
-    }
+    // Messages will be received via messaging-history.set event
+    // This function is now just a placeholder - history sync happens automatically
+    console.log('Waiting for message history sync from WhatsApp...');
+    this.io.emit('messages-loaded', { count: this.messages.length });
   }
 
   async loadContacts() {
     try {
-      const contacts = this.store?.contacts || {};
-      for (const [id, contact] of Object.entries(contacts)) {
-        this.contacts.set(id, contact);
-      }
+      // Contacts will be loaded via contacts.update event
       console.log(`Loaded ${this.contacts.size} contacts`);
     } catch (error) {
       console.error('Error loading contacts:', error);
