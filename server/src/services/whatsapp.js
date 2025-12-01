@@ -352,18 +352,23 @@ class WhatsAppService {
       
       // Get all groups and request history for each
       const groups = await this.sock.groupFetchAllParticipating();
-      const chatIds = Object.keys(groups).slice(0, 20); // Limit to 20 chats
+      const chatIds = Object.keys(groups).slice(0, 5); // Limit to 5 chats to avoid rate limit
       
       let requested = 0;
       for (const chatId of chatIds) {
         try {
-          // Request 50 messages per chat
-          await this.sock.fetchMessageHistory(50, { remoteJid: chatId }, undefined);
+          // Request 20 messages per chat
+          await this.sock.fetchMessageHistory(20, { remoteJid: chatId }, undefined);
           requested++;
-          // Small delay to avoid rate limiting
-          await new Promise(r => setTimeout(r, 500));
+          // Longer delay to avoid rate limiting (3 seconds)
+          await new Promise(r => setTimeout(r, 3000));
         } catch (e) {
           console.log(`Could not fetch history for ${chatId}:`, e.message);
+          // If rate limited, stop
+          if (e.message?.includes('rate') || e.message?.includes('limit')) {
+            console.log('Rate limited, stopping...');
+            break;
+          }
         }
       }
       
