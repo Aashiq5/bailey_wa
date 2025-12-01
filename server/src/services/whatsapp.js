@@ -3,7 +3,8 @@ const {
   useMultiFileAuthState, 
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+  downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
@@ -21,8 +22,14 @@ class WhatsAppService {
     this.groups = new Map();
     this.messages = [];
     this.authFolder = path.join(__dirname, '../../auth_info');
+    this.mediaFolder = path.join(__dirname, '../../media');
     this.usePairingCode = false;
     this.phoneNumber = null;
+    
+    // Create media folder
+    if (!fs.existsSync(this.mediaFolder)) {
+      fs.mkdirSync(this.mediaFolder, { recursive: true });
+    }
   }
 
   async connect(phoneNumber = null) {
@@ -154,17 +161,35 @@ class WhatsAppService {
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
     
+    let mediaInfo = null;
+    const msgType = this.getMessageType(msg.message);
+    
+    // Store message reference for media download
+    if (['image', 'video', 'audio', 'document'].includes(msgType)) {
+      mediaInfo = {
+        messageId: msg.key.id,
+        hasMedia: true,
+        mediaType: msgType,
+        mimetype: msg.message?.[`${msgType}Message`]?.mimetype,
+        filename: msg.message?.documentMessage?.fileName
+      };
+    }
+    
     return {
       id: msg.key.id,
       from: jid,
       sender: msg.pushName || jid.split('@')[0],
       isGroup,
+      groupName: isGroup ? this.groups.get(jid)?.name : null,
       content: msg.message?.conversation || 
                msg.message?.extendedTextMessage?.text ||
                msg.message?.imageMessage?.caption ||
-               '[Media]',
+               msg.message?.videoMessage?.caption ||
+               (mediaInfo ? `[${msgType.toUpperCase()}]` : '[Media]'),
       timestamp: new Date(msg.messageTimestamp * 1000).toISOString(),
-      type: this.getMessageType(msg.message)
+      type: msgType,
+      media: mediaInfo,
+      rawMessage: msg // Store for media download
     };
   }
 
@@ -251,7 +276,12 @@ class WhatsAppService {
       // Format JID if needed
       let formattedJid = jid;
       if (!jid.includes('@')) {
+        // Check if it's a group ID (numeric only, typically longer)
         formattedJid = `${jid}@s.whatsapp.net`;
+      }
+      // Keep @g.us suffix for groups
+      if (jid.endsWith('@g.us')) {
+        formattedJid = jid;
       }
 
       await this.sock.sendMessage(formattedJid, { text: message });
@@ -266,6 +296,157 @@ class WhatsAppService {
       console.error('Error sending message:', error);
       throw error;
     }
+  }
+
+  // Send message to group by group ID
+  async sendGroupMessage(groupId, message) {
+    if (!this.connected) {
+      throw new Error('Not connected to WhatsApp');
+    }
+
+    try {
+      // Ensure group ID has correct format
+      let formattedGroupId = groupId;
+      if (!groupId.endsWith('@g.us')) {
+        formattedGroupId = `${groupId}@g.us`;
+      }
+
+      await this.sock.sendMessage(formattedGroupId, { text: message });
+      
+      return {
+        success: true,
+        to: formattedGroupId,
+        message,
+        isGroup: true,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error sending group message:', error);
+      throw error;
+    }
+  }
+
+  // Send media message (image, video, document, audio)
+  async sendMedia(jid, mediaBuffer, mediaType, options = {}) {
+    if (!this.connected) {
+      throw new Error('Not connected to WhatsApp');
+    }
+
+    try {
+      let formattedJid = jid;
+      if (!jid.includes('@')) {
+        formattedJid = `${jid}@s.whatsapp.net`;
+      }
+      if (jid.endsWith('@g.us')) {
+        formattedJid = jid;
+      }
+
+      let messageContent = {};
+      
+      switch (mediaType) {
+        case 'image':
+          messageContent = {
+            image: mediaBuffer,
+            caption: options.caption || '',
+            mimetype: options.mimetype || 'image/jpeg'
+          };
+          break;
+        case 'video':
+          messageContent = {
+            video: mediaBuffer,
+            caption: options.caption || '',
+            mimetype: options.mimetype || 'video/mp4'
+          };
+          break;
+        case 'audio':
+          messageContent = {
+            audio: mediaBuffer,
+            mimetype: options.mimetype || 'audio/mpeg',
+            ptt: options.ptt || false // voice note
+          };
+          break;
+        case 'document':
+          messageContent = {
+            document: mediaBuffer,
+            fileName: options.fileName || 'file',
+            mimetype: options.mimetype || 'application/octet-stream'
+          };
+          break;
+        default:
+          throw new Error('Invalid media type');
+      }
+
+      await this.sock.sendMessage(formattedJid, messageContent);
+      
+      return {
+        success: true,
+        to: formattedJid,
+        mediaType,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error sending media:', error);
+      throw error;
+    }
+  }
+
+  // Download media from a message
+  async downloadMedia(messageId) {
+    try {
+      // Find the message with this ID
+      const msg = this.messages.find(m => m.id === messageId);
+      if (!msg || !msg.rawMessage) {
+        throw new Error('Message not found or no media');
+      }
+
+      const buffer = await downloadMediaMessage(
+        msg.rawMessage,
+        'buffer',
+        {},
+        {
+          logger: pino({ level: 'silent' }),
+          reuploadRequest: this.sock.updateMediaMessage
+        }
+      );
+
+      // Generate filename
+      const ext = this.getExtensionFromMimetype(msg.media?.mimetype);
+      const filename = msg.media?.filename || `${messageId}.${ext}`;
+      const filepath = path.join(this.mediaFolder, filename);
+
+      // Save to file
+      fs.writeFileSync(filepath, buffer);
+
+      return {
+        success: true,
+        filename,
+        filepath,
+        size: buffer.length,
+        mimetype: msg.media?.mimetype
+      };
+    } catch (error) {
+      console.error('Error downloading media:', error);
+      throw error;
+    }
+  }
+
+  getExtensionFromMimetype(mimetype) {
+    if (!mimetype) return 'bin';
+    const mimeMap = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'video/mp4': 'mp4',
+      'video/3gpp': '3gp',
+      'audio/mpeg': 'mp3',
+      'audio/ogg': 'ogg',
+      'audio/wav': 'wav',
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
+    };
+    return mimeMap[mimetype] || mimetype.split('/')[1] || 'bin';
   }
 
   async sendBulkMessages(recipients, message, delay = 2000) {

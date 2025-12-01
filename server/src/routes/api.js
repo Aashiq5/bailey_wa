@@ -1,5 +1,23 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
 // Get connection status
 router.get('/status', (req, res) => {
@@ -50,10 +68,10 @@ router.get('/messages', (req, res) => {
   res.json(whatsapp.getMessages(limit));
 });
 
-// Send message to single recipient
+// Send message to single recipient (contact or group)
 router.post('/send', async (req, res) => {
   const whatsapp = req.app.get('whatsapp');
-  const { to, message } = req.body;
+  const { to, message, isGroup } = req.body;
 
   if (!to || !message) {
     return res.status(400).json({ error: 'Missing "to" or "message" field' });
@@ -64,12 +82,130 @@ router.post('/send', async (req, res) => {
   }
 
   try {
-    const result = await whatsapp.sendMessage(to, message);
+    let result;
+    if (isGroup || to.endsWith('@g.us')) {
+      result = await whatsapp.sendGroupMessage(to, message);
+    } else {
+      result = await whatsapp.sendMessage(to, message);
+    }
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Send message to group
+router.post('/send-group', async (req, res) => {
+  const whatsapp = req.app.get('whatsapp');
+  const { groupId, message } = req.body;
+
+  if (!groupId || !message) {
+    return res.status(400).json({ error: 'Missing "groupId" or "message" field' });
+  }
+
+  if (!whatsapp.isConnected()) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+
+  try {
+    const result = await whatsapp.sendGroupMessage(groupId, message);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send media (image, video, document, audio)
+router.post('/send-media', upload.single('file'), async (req, res) => {
+  const whatsapp = req.app.get('whatsapp');
+  const { to, mediaType, caption, isGroup } = req.body;
+
+  if (!to || !req.file) {
+    return res.status(400).json({ error: 'Missing "to" or file' });
+  }
+
+  if (!whatsapp.isConnected()) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+
+  try {
+    const mediaBuffer = fs.readFileSync(req.file.path);
+    const type = mediaType || getMediaType(req.file.mimetype);
+    
+    let jid = to;
+    if (isGroup && !to.endsWith('@g.us')) {
+      jid = `${to}@g.us`;
+    }
+
+    const result = await whatsapp.sendMedia(jid, mediaBuffer, type, {
+      caption: caption || '',
+      mimetype: req.file.mimetype,
+      fileName: req.file.originalname
+    });
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    res.json(result);
+  } catch (error) {
+    // Clean up on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Download media from message
+router.get('/download-media/:messageId', async (req, res) => {
+  const whatsapp = req.app.get('whatsapp');
+
+  if (!whatsapp.isConnected()) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+
+  try {
+    const result = await whatsapp.downloadMedia(req.params.messageId);
+    
+    // Send file as download
+    res.download(result.filepath, result.filename, (err) => {
+      if (err) {
+        console.error('Download error:', err);
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get downloaded media list
+router.get('/media', (req, res) => {
+  const mediaFolder = path.join(__dirname, '../../media');
+  
+  if (!fs.existsSync(mediaFolder)) {
+    return res.json([]);
+  }
+
+  const files = fs.readdirSync(mediaFolder).map(filename => {
+    const filepath = path.join(mediaFolder, filename);
+    const stats = fs.statSync(filepath);
+    return {
+      filename,
+      size: stats.size,
+      created: stats.birthtime
+    };
+  });
+
+  res.json(files);
+});
+
+// Helper function to determine media type
+function getMediaType(mimetype) {
+  if (mimetype.startsWith('image/')) return 'image';
+  if (mimetype.startsWith('video/')) return 'video';
+  if (mimetype.startsWith('audio/')) return 'audio';
+  return 'document';
+}
 
 // Send bulk messages
 router.post('/send-bulk', async (req, res) => {

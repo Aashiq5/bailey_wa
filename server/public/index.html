@@ -516,6 +516,79 @@
       }
     }
 
+    /* File Upload */
+    .file-input {
+      padding: 10px;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      background: var(--bg-light);
+    }
+
+    .file-input:hover {
+      border-color: var(--primary);
+    }
+
+    .file-preview {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--light-green);
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+
+    .btn-remove {
+      background: #ff5252;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+    }
+
+    /* Media message styles */
+    .message-media {
+      margin: 8px 0;
+    }
+
+    .message-media img,
+    .message-media video {
+      max-width: 100%;
+      border-radius: 8px;
+    }
+
+    .media-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 15px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      margin-top: 5px;
+    }
+
+    .media-download:hover {
+      background: var(--primary-dark);
+    }
+
+    .media-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: rgba(0,0,0,0.05);
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
     /* Toolbar */
     .toolbar {
       display: flex;
@@ -663,6 +736,7 @@
             <label>Send Mode</label>
             <select id="sendMode" onchange="toggleSendMode()">
               <option value="single">Single Recipient</option>
+              <option value="group">Group Message</option>
               <option value="bulk">Bulk Send (Multiple)</option>
             </select>
           </div>
@@ -672,6 +746,16 @@
             <div class="form-group">
               <label>Phone Number (with country code)</label>
               <input type="tel" id="phoneNumber" placeholder="+1234567890">
+            </div>
+          </div>
+
+          <!-- Group Send -->
+          <div id="groupSend" style="display:none;">
+            <div class="form-group">
+              <label>Select Group</label>
+              <select id="groupSelect">
+                <option value="">-- Select a group --</option>
+              </select>
             </div>
           </div>
 
@@ -689,11 +773,34 @@
           </div>
 
           <div class="form-group">
-            <label>Message</label>
+            <label>Message Type</label>
+            <select id="messageType" onchange="toggleMediaUpload()">
+              <option value="text">Text Only</option>
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="document">Document</option>
+            </select>
+          </div>
+
+          <!-- Media Upload -->
+          <div id="mediaUpload" style="display:none;">
+            <div class="form-group">
+              <label>Select File</label>
+              <input type="file" id="mediaFile" accept="*/*" class="file-input">
+              <div id="filePreview" class="file-preview" style="display:none;">
+                <span id="fileName"></span>
+                <button type="button" class="btn-remove" onclick="clearFile()">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label id="messageLabel">Message</label>
             <textarea id="messageText" placeholder="Type your message here..."></textarea>
           </div>
 
-          <button class="btn btn-primary" onclick="sendMessage()">
+          <button class="btn btn-primary" onclick="sendMessage()" id="sendBtn">
             <span>📤</span> Send Message
           </button>
         </div>
@@ -925,6 +1032,11 @@
           </div>
         </div>
       `).join('');
+
+      // Also update group select dropdown
+      const groupSelect = document.getElementById('groupSelect');
+      groupSelect.innerHTML = '<option value="">-- Select a group --</option>' + 
+        groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
     }
 
     function renderMessages() {
@@ -934,13 +1046,48 @@
         return;
       }
 
-      container.innerHTML = messages.map(msg => `
-        <div class="message incoming">
-          <div class="message-sender">${msg.sender}</div>
-          <div class="message-text">${escapeHtml(msg.content)}</div>
-          <div class="message-time">${formatTime(msg.timestamp)}</div>
-        </div>
-      `).join('');
+      container.innerHTML = messages.map(msg => {
+        let mediaHtml = '';
+        if (msg.hasMedia && msg.mediaType) {
+          const icon = getMediaIcon(msg.mediaType);
+          mediaHtml = `
+            <div class="media-indicator">
+              ${icon} ${msg.mediaType.toUpperCase()}
+            </div>
+            <button class="media-download" onclick="downloadMedia('${msg.id}')">
+              ⬇️ Download Media
+            </button>
+          `;
+        }
+        return `
+          <div class="message incoming">
+            <div class="message-sender">${msg.sender}</div>
+            ${msg.content ? `<div class="message-text">${escapeHtml(msg.content)}</div>` : ''}
+            ${mediaHtml}
+            <div class="message-time">${formatTime(msg.timestamp)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function getMediaIcon(type) {
+      const icons = {
+        'image': '🖼️',
+        'video': '🎥',
+        'audio': '🎵',
+        'document': '📄',
+        'sticker': '🏷️'
+      };
+      return icons[type] || '📎';
+    }
+
+    async function downloadMedia(messageId) {
+      try {
+        showToast('Downloading media...', 'success');
+        window.open(`/api/download-media/${messageId}`, '_blank');
+      } catch (error) {
+        showToast('Error downloading media', 'error');
+      }
     }
 
     function renderRecipientsList() {
@@ -978,7 +1125,12 @@
     }
 
     function selectGroup(id) {
-      document.getElementById('phoneNumber').value = id;
+      const mode = document.getElementById('sendMode').value;
+      if (mode !== 'group') {
+        document.getElementById('sendMode').value = 'group';
+        toggleSendMode();
+      }
+      document.getElementById('groupSelect').value = id;
       switchTab('send');
       showToast('Group selected', 'success');
     }
@@ -986,43 +1138,119 @@
     function toggleSendMode() {
       const mode = document.getElementById('sendMode').value;
       document.getElementById('singleSend').style.display = mode === 'single' ? 'block' : 'none';
+      document.getElementById('groupSend').style.display = mode === 'group' ? 'block' : 'none';
       document.getElementById('bulkSend').style.display = mode === 'bulk' ? 'block' : 'none';
     }
 
+    function toggleMediaUpload() {
+      const type = document.getElementById('messageType').value;
+      const mediaUpload = document.getElementById('mediaUpload');
+      const messageLabel = document.getElementById('messageLabel');
+      
+      if (type === 'text') {
+        mediaUpload.style.display = 'none';
+        messageLabel.textContent = 'Message';
+      } else {
+        mediaUpload.style.display = 'block';
+        messageLabel.textContent = 'Caption (optional)';
+        
+        // Update file input accept attribute
+        const fileInput = document.getElementById('mediaFile');
+        const accepts = {
+          'image': 'image/*',
+          'video': 'video/*',
+          'audio': 'audio/*',
+          'document': '*/*'
+        };
+        fileInput.accept = accepts[type];
+      }
+    }
+
+    function clearFile() {
+      document.getElementById('mediaFile').value = '';
+      document.getElementById('filePreview').style.display = 'none';
+    }
+
+    // File input change handler
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('mediaFile')?.addEventListener('change', function() {
+        const preview = document.getElementById('filePreview');
+        const fileName = document.getElementById('fileName');
+        if (this.files.length > 0) {
+          preview.style.display = 'flex';
+          fileName.textContent = this.files[0].name;
+        } else {
+          preview.style.display = 'none';
+        }
+      });
+    });
+
     async function sendMessage() {
       const mode = document.getElementById('sendMode').value;
+      const messageType = document.getElementById('messageType').value;
       const message = document.getElementById('messageText').value.trim();
+      const mediaFile = document.getElementById('mediaFile').files[0];
+      const sendBtn = document.getElementById('sendBtn');
 
-      if (!message) {
+      // Validate
+      if (messageType !== 'text' && !mediaFile) {
+        showToast('Please select a file to send', 'error');
+        return;
+      }
+
+      if (messageType === 'text' && !message) {
         showToast('Please enter a message', 'error');
         return;
       }
+
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<span>⏳</span> Sending...';
 
       try {
         if (mode === 'single') {
           const to = document.getElementById('phoneNumber').value.trim();
           if (!to) {
             showToast('Please enter a phone number', 'error');
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<span>📤</span> Send Message';
             return;
           }
 
-          const res = await fetch('/api/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ to, message })
-          });
-
-          const data = await res.json();
-          if (res.ok) {
-            showToast('Message sent!', 'success');
-            document.getElementById('messageText').value = '';
+          if (messageType === 'text') {
+            const res = await fetch('/api/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to, message })
+            });
+            await handleSendResponse(res);
           } else {
-            showToast(data.error || 'Failed to send', 'error');
+            await sendMediaMessage(to, false);
+          }
+        } else if (mode === 'group') {
+          const groupId = document.getElementById('groupSelect').value;
+          if (!groupId) {
+            showToast('Please select a group', 'error');
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<span>📤</span> Send Message';
+            return;
+          }
+
+          if (messageType === 'text') {
+            const res = await fetch('/api/send-group', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groupId, message })
+            });
+            await handleSendResponse(res);
+          } else {
+            await sendMediaMessage(groupId, true);
           }
         } else {
-          // Bulk send
+          // Bulk send (text only for now)
           if (selectedRecipients.size === 0) {
             showToast('Please select recipients', 'error');
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<span>📤</span> Send Message';
             return;
           }
 
@@ -1040,14 +1268,55 @@
           if (res.ok) {
             const sent = data.results.filter(r => r.status === 'sent').length;
             showToast(`Sent to ${sent}/${selectedRecipients.size} recipients`, 'success');
-            document.getElementById('messageText').value = '';
+            clearSendForm();
           } else {
             showToast(data.error || 'Failed to send', 'error');
           }
         }
       } catch (error) {
-        showToast('Error sending message', 'error');
+        showToast('Error sending message: ' + error.message, 'error');
       }
+
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = '<span>📤</span> Send Message';
+    }
+
+    async function sendMediaMessage(to, isGroup) {
+      const mediaFile = document.getElementById('mediaFile').files[0];
+      const caption = document.getElementById('messageText').value.trim();
+      const mediaType = document.getElementById('messageType').value;
+
+      const formData = new FormData();
+      formData.append('file', mediaFile);
+      formData.append('to', to);
+      formData.append('mediaType', mediaType);
+      formData.append('caption', caption);
+      formData.append('isGroup', isGroup);
+
+      const res = await fetch('/api/send-media', {
+        method: 'POST',
+        body: formData
+      });
+
+      await handleSendResponse(res);
+    }
+
+    async function handleSendResponse(res) {
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Message sent!', 'success');
+        clearSendForm();
+      } else {
+        showToast(data.error || 'Failed to send', 'error');
+      }
+    }
+
+    function clearSendForm() {
+      document.getElementById('messageText').value = '';
+      document.getElementById('mediaFile').value = '';
+      document.getElementById('filePreview').style.display = 'none';
+      document.getElementById('messageType').value = 'text';
+      toggleMediaUpload();
     }
 
     // Tab handling
