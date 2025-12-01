@@ -245,7 +245,7 @@ router.post('/logout', async (req, res) => {
   }
 });
 
-// Trigger manual message check
+// Trigger manual message check - get all messages from last week
 router.post('/check-messages', async (req, res) => {
   const whatsapp = req.app.get('whatsapp');
   const io = req.app.get('io');
@@ -254,17 +254,17 @@ router.post('/check-messages', async (req, res) => {
     return res.status(503).json({ error: 'Not connected to WhatsApp' });
   }
 
-  const unread = await whatsapp.getUnreadMessages();
+  const recentMessages = await whatsapp.getRecentMessages();
   io.emit('manual-check', { 
     timestamp: new Date().toISOString(),
-    unreadCount: unread.length,
-    messages: unread
+    messageCount: recentMessages.length,
+    messages: recentMessages
   });
   
   res.json({ 
     success: true, 
-    unreadCount: unread.length,
-    messages: unread 
+    messageCount: recentMessages.length,
+    messages: recentMessages 
   });
 });
 

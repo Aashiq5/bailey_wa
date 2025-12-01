@@ -310,8 +310,8 @@ class WhatsAppService {
     return this.messages.slice(0, limit);
   }
 
-  async getUnreadMessages() {
-    // Return messages from last week
+  async getRecentMessages() {
+    // Return all messages from last week (read and unread)
     const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     return this.messages.filter(m => 
       new Date(m.timestamp).getTime() > oneWeekAgo

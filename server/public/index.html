@@ -1223,7 +1223,7 @@
       try {
         const res = await fetch('/api/check-messages', { method: 'POST' });
         const data = await res.json();
-        showToast(`Found ${data.unreadCount} messages in last week`, 'success');
+        showToast(`Found ${data.messageCount} messages in last week`, 'success');
       } catch (error) {
         showToast('Error checking messages', 'error');
       }
