@@ -55,38 +55,43 @@ class WhatsAppService {
           keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
         generateHighQualityLinkPreview: true,
-        syncFullHistory: true  // Enable full history sync
+        getMessage: async (key) => {
+          // Required for message retries
+          return { conversation: '' };
+        }
       });
 
-      // Handle message history sync (gets old messages)
+      // Handle message history sync (gets old messages when available)
       this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
-        console.log(`History sync: ${messages.length} messages, ${chats.length} chats`);
+        console.log(`History sync: ${messages?.length || 0} messages, ${chats?.length || 0} chats`);
         
-        // Process historical messages
-        for (const msg of messages) {
-          if (!msg.key.fromMe) {
-            try {
-              const messageData = await this.parseMessage(msg);
-              // Avoid duplicates
-              if (!this.messages.find(m => m.id === messageData.id)) {
-                this.messages.push(messageData);
+        if (messages && messages.length > 0) {
+          // Process historical messages
+          for (const msg of messages) {
+            if (!msg.key.fromMe && msg.message) {
+              try {
+                const messageData = await this.parseMessage(msg);
+                // Avoid duplicates
+                if (!this.messages.find(m => m.id === messageData.id)) {
+                  this.messages.push(messageData);
+                }
+              } catch (e) {
+                // Skip messages that fail to parse
               }
-            } catch (e) {
-              // Skip messages that fail to parse
             }
           }
+          
+          // Sort by timestamp (newest first)
+          this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          
+          // Notify frontend
+          this.io.emit('history-sync', { 
+            count: this.messages.length,
+            isLatest 
+          });
+          
+          console.log(`Total messages after sync: ${this.messages.length}`);
         }
-        
-        // Sort by timestamp (newest first)
-        this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        
-        // Notify frontend
-        this.io.emit('history-sync', { 
-          count: this.messages.length,
-          isLatest 
-        });
-        
-        console.log(`Total messages after sync: ${this.messages.length}`);
       });
 
       // Handle connection updates
