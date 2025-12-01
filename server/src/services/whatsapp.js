@@ -161,34 +161,64 @@ class WhatsAppService {
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
     
+    // Get the actual sender for group messages
+    let senderJid = jid;
+    let senderName = msg.pushName || jid.split('@')[0];
+    
+    if (isGroup && msg.key.participant) {
+      // For group messages, participant is the actual sender
+      senderJid = msg.key.participant;
+      senderName = msg.pushName || senderJid.split('@')[0];
+    }
+    
+    // Clean up weird phone numbers (remove :XX suffix from JID)
+    const cleanNumber = (num) => {
+      if (!num) return '';
+      return num.split('@')[0].split(':')[0];
+    };
+    
     let mediaInfo = null;
     const msgType = this.getMessageType(msg.message);
     
     // Store message reference for media download
-    if (['image', 'video', 'audio', 'document'].includes(msgType)) {
+    if (['image', 'video', 'audio', 'document', 'sticker'].includes(msgType)) {
+      const mediaMsg = msg.message?.[`${msgType}Message`];
       mediaInfo = {
         messageId: msg.key.id,
         hasMedia: true,
         mediaType: msgType,
-        mimetype: msg.message?.[`${msgType}Message`]?.mimetype,
-        filename: msg.message?.documentMessage?.fileName
+        mimetype: mediaMsg?.mimetype,
+        filename: msg.message?.documentMessage?.fileName,
+        filesize: mediaMsg?.fileLength,
+        caption: mediaMsg?.caption
       };
     }
+    
+    // Get text content
+    let textContent = msg.message?.conversation || 
+               msg.message?.extendedTextMessage?.text ||
+               msg.message?.imageMessage?.caption ||
+               msg.message?.videoMessage?.caption ||
+               '';
+    
+    // Get group name
+    const groupInfo = isGroup ? this.groups.get(jid) : null;
+    const groupName = groupInfo?.name || (isGroup ? 'Unknown Group' : null);
     
     return {
       id: msg.key.id,
       from: jid,
-      sender: msg.pushName || jid.split('@')[0],
+      sender: senderName,
+      senderNumber: cleanNumber(senderJid),
       isGroup,
-      groupName: isGroup ? this.groups.get(jid)?.name : null,
-      content: msg.message?.conversation || 
-               msg.message?.extendedTextMessage?.text ||
-               msg.message?.imageMessage?.caption ||
-               msg.message?.videoMessage?.caption ||
-               (mediaInfo ? `[${msgType.toUpperCase()}]` : '[Media]'),
+      groupId: isGroup ? jid : null,
+      groupName: groupName,
+      content: textContent,
       timestamp: new Date(msg.messageTimestamp * 1000).toISOString(),
       type: msgType,
-      media: mediaInfo,
+      hasMedia: !!mediaInfo,
+      mediaType: mediaInfo?.mediaType || null,
+      mediaInfo: mediaInfo,
       rawMessage: msg // Store for media download
     };
   }
