@@ -109,7 +109,7 @@ Repository: https://github.com/nicknisi/nodejs-mobile-react-native
 Copy this entire block and paste in Termux:
 
 ```bash
-pkg update -y && pkg upgrade -y && pkg install nodejs git -y && cd ~ && git clone https://github.com/nicknisi/bailey_wa.git && cd bailey_wa/server && npm install && echo "Setup complete! Run 'npm start' to begin" 
+pkg update -y && pkg upgrade -y && pkg install nodejs git -y && cd ~ && git clone https://github.com/Aashiq5/bailey_wa.git && cd bailey_wa/server && npm install && echo "Setup complete! Run 'npm start' to begin" 
 ```
 
 Then:
@@ -121,7 +121,64 @@ Open browser → `http://localhost:3000` → Login with QR or Phone Number!
 
 ---
 
+## Get Latest Updates
+
+To pull the latest code from GitHub in Termux:
+
+```bash
+cd ~/bailey_wa
+git pull origin master
+cd server
+npm install
+npm start
+```
+
+### If you get "commit or stash" error:
+
+This happens when you have local changes. Use one of these solutions:
+
+**Option A: Discard local changes and get latest (Recommended)**
+```bash
+cd ~/bailey_wa
+git fetch origin
+git reset --hard origin/master
+cd server
+npm install
+npm start
+```
+
+**Option B: Stash your changes, pull, then restore**
+```bash
+cd ~/bailey_wa
+git stash
+git pull origin master
+git stash pop
+cd server
+npm install
+npm start
+```
+
+**Option C: Force overwrite everything (Nuclear option)**
+```bash
+cd ~
+rm -rf bailey_wa
+git clone https://github.com/Aashiq5/bailey_wa.git
+cd bailey_wa/server
+npm install
+npm start
+```
+
+---
+
 ## Troubleshooting
+
+### "npm install fails with E401 error"
+Run the setup script:
+```bash
+cd ~/bailey_wa/server
+chmod +x setup-termux.sh
+./setup-termux.sh
+```
 
 ### "Storage permission denied"
 ```bash
