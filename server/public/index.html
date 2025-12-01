@@ -813,7 +813,7 @@
       <div id="chats" class="tab-content active">
         <div class="toolbar">
           <button class="toolbar-btn" onclick="refreshMessages()">🔄 Refresh</button>
-          <button class="toolbar-btn" onclick="checkMessages()">📩 Check Week</button>
+          <button class="toolbar-btn" onclick="syncHistory()">📜 Sync History</button>
           <button class="toolbar-btn" id="viewToggle" onclick="toggleChatView()">📋 List View</button>
         </div>
         <!-- Conversation List View -->
@@ -1122,6 +1122,21 @@
     function refreshMessages() {
       loadMessages();
       showToast('Messages refreshed', 'success');
+    }
+
+    async function syncHistory() {
+      try {
+        showToast('Requesting message history...', 'success');
+        const res = await fetch('/api/sync-history', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Requested history for ${data.chatsRequested} chats. Wait for sync...`, 'success');
+        } else {
+          showToast('Failed to sync: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showToast('Error syncing history', 'error');
+      }
     }
 
     // Group messages by conversation (sender/group)

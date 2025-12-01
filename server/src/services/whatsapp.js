@@ -341,6 +341,40 @@ class WhatsAppService {
     this.io.emit('messages-loaded', { count: this.messages.length });
   }
 
+  // Fetch message history for all recent chats
+  async requestHistorySync() {
+    if (!this.connected || !this.sock) {
+      throw new Error('Not connected to WhatsApp');
+    }
+    
+    try {
+      console.log('Requesting message history sync...');
+      
+      // Get all groups and request history for each
+      const groups = await this.sock.groupFetchAllParticipating();
+      const chatIds = Object.keys(groups).slice(0, 20); // Limit to 20 chats
+      
+      let requested = 0;
+      for (const chatId of chatIds) {
+        try {
+          // Request 50 messages per chat
+          await this.sock.fetchMessageHistory(50, { remoteJid: chatId }, undefined);
+          requested++;
+          // Small delay to avoid rate limiting
+          await new Promise(r => setTimeout(r, 500));
+        } catch (e) {
+          console.log(`Could not fetch history for ${chatId}:`, e.message);
+        }
+      }
+      
+      console.log(`Requested history for ${requested} chats`);
+      return { success: true, chatsRequested: requested };
+    } catch (error) {
+      console.error('Error requesting history:', error);
+      throw error;
+    }
+  }
+
   async loadContacts() {
     try {
       // Contacts will be loaded via contacts.update event

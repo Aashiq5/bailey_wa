@@ -68,6 +68,22 @@ router.get('/messages', (req, res) => {
   res.json(whatsapp.getMessages(limit));
 });
 
+// Request message history sync
+router.post('/sync-history', async (req, res) => {
+  const whatsapp = req.app.get('whatsapp');
+
+  if (!whatsapp.isConnected()) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+
+  try {
+    const result = await whatsapp.requestHistorySync();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Send message to single recipient (contact or group)
 router.post('/send', async (req, res) => {
   const whatsapp = req.app.get('whatsapp');
