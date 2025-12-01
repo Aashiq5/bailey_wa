@@ -1144,9 +1144,19 @@
       const convMap = new Map();
       
       for (const msg of messages) {
-        // Use groupId for groups, or sender number for individuals
-        const key = msg.isGroup ? msg.from : msg.senderNumber || msg.from;
-        const name = msg.isGroup ? (msg.groupName || 'Unknown Group') : msg.sender;
+        // For groups: use groupId (msg.from ends with @g.us)
+        // For individuals: use the 'from' field (the chat JID)
+        const key = msg.from;
+        
+        // For name: use groupName for groups, sender name for individuals
+        // But for individual chats, use the OTHER person's name, not "You"
+        let name;
+        if (msg.isGroup) {
+          name = msg.groupName || 'Unknown Group';
+        } else {
+          // For individual chats, get the contact name (not "You")
+          name = msg.fromMe ? (msg.senderNumber || msg.from.split('@')[0]) : msg.sender;
+        }
         
         if (!convMap.has(key)) {
           convMap.set(key, {
@@ -1157,8 +1167,15 @@
             lastMessage: msg,
             unread: 0
           });
+        } else if (!msg.fromMe && !msg.isGroup) {
+          // Update name if we get a non-fromMe message (to get actual contact name)
+          convMap.get(key).name = msg.sender;
         }
         convMap.get(key).messages.push(msg);
+        // Update lastMessage if this is newer
+        if (new Date(msg.timestamp) > new Date(convMap.get(key).lastMessage.timestamp)) {
+          convMap.get(key).lastMessage = msg;
+        }
       }
       
       // Sort by latest message
@@ -1323,8 +1340,11 @@
           contentHtml = `<div class="message-text">${linkify(escapeHtml(msg.content))}</div>`;
         }
         
+        // Determine message class based on fromMe
+        const messageClass = msg.fromMe ? 'outgoing' : 'incoming';
+        
         return `
-          <div class="message incoming ${msg.isGroup ? 'from-group' : ''}">
+          <div class="message ${messageClass} ${msg.isGroup ? 'from-group' : ''}">
             <div class="message-sender">${senderDisplay}</div>
             ${contentHtml}
             ${mediaHtml}

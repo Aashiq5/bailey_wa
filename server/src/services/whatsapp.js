@@ -152,18 +152,16 @@ class WhatsAppService {
           let addedCount = 0;
           
           for (const msg of messages) {
-            if (!msg.key.fromMe) {
-              try {
-                const messageData = await this.parseMessage(msg);
-                // Avoid duplicates
-                if (!this.messages.find(m => m.id === messageData.id)) {
-                  this.messages.push(messageData);
-                  this.rawMessages.set(messageData.id, msg);
-                  addedCount++;
-                }
-              } catch (e) {
-                // Skip problematic messages
+            try {
+              const messageData = await this.parseMessage(msg);
+              // Avoid duplicates
+              if (!this.messages.find(m => m.id === messageData.id)) {
+                this.messages.push(messageData);
+                this.rawMessages.set(messageData.id, msg);
+                addedCount++;
               }
+            } catch (e) {
+              // Skip problematic messages
             }
           }
           // Sort by timestamp descending (newest first)
@@ -177,14 +175,12 @@ class WhatsAppService {
       this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type === 'notify') {
           for (const msg of messages) {
-            if (!msg.key.fromMe) {
-              const messageData = await this.parseMessage(msg);
-              // Store raw message for download
-              this.rawMessages.set(messageData.id, msg);
-              this.messages.unshift(messageData);
-              this.io.emit('new-message', messageData);
-              console.log('New message from:', messageData.sender, messageData.isGroup ? `(${messageData.groupName})` : '');
-            }
+            const messageData = await this.parseMessage(msg);
+            // Store raw message for download
+            this.rawMessages.set(messageData.id, msg);
+            this.messages.unshift(messageData);
+            this.io.emit('new-message', messageData);
+            console.log(messageData.fromMe ? 'Sent message to:' : 'New message from:', messageData.sender, messageData.isGroup ? `(${messageData.groupName})` : '');
           }
         }
       });
@@ -306,9 +302,16 @@ class WhatsAppService {
                msg.message?.videoMessage?.caption ||
                '';
     
+    // For sent messages, set sender as "You"
+    const fromMe = msg.key.fromMe === true;
+    if (fromMe) {
+      senderName = 'You';
+    }
+    
     return {
       id: msg.key.id,
       from: jid,
+      fromMe: fromMe,
       sender: senderName,
       senderNumber: cleanNumber(senderJid),
       isGroup,
