@@ -268,6 +268,84 @@ router.post('/send-bulk', async (req, res) => {
   }
 });
 
+// Export messages to JSON
+router.get('/export-messages', (req, res) => {
+  const whatsapp = req.app.get('whatsapp');
+  
+  try {
+    const messages = whatsapp.messages;
+    const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    
+    // Filter last week messages
+    const recentMessages = messages.filter(m => 
+      new Date(m.timestamp).getTime() > oneWeekAgo
+    );
+    
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      messageCount: recentMessages.length,
+      messages: recentMessages
+    };
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=whatsapp-messages-${Date.now()}.json`);
+    res.json(exportData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Import messages from JSON (append only, no duplicates)
+router.post('/import-messages', express.json({ limit: '50mb' }), (req, res) => {
+  const whatsapp = req.app.get('whatsapp');
+  const io = req.app.get('io');
+  
+  try {
+    const { messages: importedMessages } = req.body;
+    
+    if (!importedMessages || !Array.isArray(importedMessages)) {
+      return res.status(400).json({ error: 'Invalid import data. Expected { messages: [...] }' });
+    }
+    
+    // Get existing message IDs to avoid duplicates
+    const existingIds = new Set(whatsapp.messages.map(m => m.id));
+    
+    let importedCount = 0;
+    let skippedCount = 0;
+    
+    for (const msg of importedMessages) {
+      if (msg.id && !existingIds.has(msg.id)) {
+        whatsapp.messages.push(msg);
+        existingIds.add(msg.id);
+        importedCount++;
+      } else {
+        skippedCount++;
+      }
+    }
+    
+    // Sort messages by timestamp (newest first)
+    whatsapp.messages.sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    );
+    
+    // Notify clients of new messages
+    io.emit('messages-imported', { 
+      importedCount, 
+      skippedCount,
+      totalMessages: whatsapp.messages.length 
+    });
+    
+    res.json({ 
+      success: true, 
+      importedCount, 
+      skippedCount,
+      totalMessages: whatsapp.messages.length 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Logout
 router.post('/logout', async (req, res) => {
   const whatsapp = req.app.get('whatsapp');

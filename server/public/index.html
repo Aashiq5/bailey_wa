@@ -814,6 +814,9 @@
         <div class="toolbar">
           <button class="toolbar-btn" onclick="refreshMessages()">🔄 Refresh</button>
           <button class="toolbar-btn" onclick="syncHistory()">📜 Sync History</button>
+          <button class="toolbar-btn" onclick="exportMessages()">📤 Export</button>
+          <button class="toolbar-btn" onclick="document.getElementById('importFile').click()">📥 Import</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="importMessages(this)">
           <button class="toolbar-btn" id="viewToggle" onclick="toggleChatView()">📋 List View</button>
         </div>
         <!-- Conversation List View -->
@@ -1016,6 +1019,11 @@
       loadMessages();
     });
 
+    socket.on('messages-imported', (data) => {
+      showToast(`Imported ${data.importedCount} new messages`, 'success');
+      loadMessages();
+    });
+
     socket.on('messages-loaded', (data) => {
       showToast(`Loaded ${data.count} messages`, 'success');
       loadMessages();
@@ -1137,6 +1145,72 @@
       } catch (error) {
         showToast('Error syncing history', 'error');
       }
+    }
+
+    // Export messages to JSON file
+    async function exportMessages() {
+      try {
+        showToast('Exporting messages...', 'success');
+        const res = await fetch('/api/export-messages');
+        const data = await res.json();
+        
+        // Create download link
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `whatsapp-messages-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast(`Exported ${data.messageCount} messages`, 'success');
+      } catch (error) {
+        showToast('Error exporting messages: ' + error.message, 'error');
+      }
+    }
+
+    // Import messages from JSON file (append only)
+    async function importMessages(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      try {
+        showToast('Importing messages...', 'success');
+        
+        const text = await file.text();
+        const data = JSON.parse(text);
+        
+        // Handle both formats: { messages: [...] } or { exportedAt, messages: [...] }
+        const messagesToImport = data.messages || data;
+        
+        if (!Array.isArray(messagesToImport)) {
+          showToast('Invalid file format', 'error');
+          return;
+        }
+        
+        const res = await fetch('/api/import-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: messagesToImport })
+        });
+        
+        const result = await res.json();
+        
+        if (result.success) {
+          showToast(`Imported ${result.importedCount} messages (${result.skippedCount} duplicates skipped)`, 'success');
+          // Refresh the view
+          loadMessages();
+        } else {
+          showToast('Import failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showToast('Error importing: ' + error.message, 'error');
+      }
+      
+      // Reset input
+      input.value = '';
     }
 
     // Group messages by conversation (sender/group)
