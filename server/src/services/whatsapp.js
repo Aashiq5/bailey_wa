@@ -311,10 +311,10 @@ class WhatsAppService {
   }
 
   async getUnreadMessages() {
-    // Return messages from last hour
-    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    // Return messages from last week
+    const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     return this.messages.filter(m => 
-      new Date(m.timestamp).getTime() > oneHourAgo
+      new Date(m.timestamp).getTime() > oneWeekAgo
     );
   }
 

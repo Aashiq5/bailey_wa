@@ -3,8 +3,6 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
-const cron = require('node-cron');
-
 const WhatsAppService = require('./services/whatsapp');
 const apiRoutes = require('./routes/api');
 
@@ -64,18 +62,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Schedule hourly message check
-cron.schedule('0 * * * *', async () => {
-  console.log('Running hourly message check...');
-  if (whatsapp.isConnected()) {
-    const unread = await whatsapp.getUnreadMessages();
-    io.emit('hourly-check', { 
-      timestamp: new Date().toISOString(),
-      unreadCount: unread.length,
-      messages: unread
-    });
-  }
-});
+
 
 // Start server
 const PORT = process.env.PORT || 3000;
