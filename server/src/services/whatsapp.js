@@ -149,24 +149,32 @@ class WhatsAppService {
       this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
         console.log(`Received ${messages?.length || 0} messages from history sync`);
         if (messages && messages.length > 0) {
+          const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+          let addedCount = 0;
+          
           for (const msg of messages) {
             if (!msg.key.fromMe) {
               try {
+                // Filter: only messages from last week
+                const msgTime = msg.messageTimestamp * 1000;
+                if (msgTime < oneWeekAgo) continue;
+                
                 const messageData = await this.parseMessage(msg);
                 // Avoid duplicates
                 if (!this.messages.find(m => m.id === messageData.id)) {
                   this.messages.push(messageData);
                   this.rawMessages.set(messageData.id, msg);
+                  addedCount++;
                 }
               } catch (e) {
                 // Skip problematic messages
               }
             }
           }
-          // Sort by timestamp descending
+          // Sort by timestamp descending (newest first)
           this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           this.io.emit('messages-synced', { count: this.messages.length });
-          console.log(`Total messages: ${this.messages.length}`);
+          console.log(`Added ${addedCount} messages from last week. Total: ${this.messages.length}`);
         }
       });
 
