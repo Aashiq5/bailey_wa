@@ -274,11 +274,11 @@ router.get('/export-messages', (req, res) => {
   
   try {
     const messages = whatsapp.messages;
-    const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
     
-    // Filter last week messages
+    // Filter last month messages
     const recentMessages = messages.filter(m => 
-      new Date(m.timestamp).getTime() > oneWeekAgo
+      new Date(m.timestamp).getTime() > oneMonthAgo
     );
     
     const exportData = {
