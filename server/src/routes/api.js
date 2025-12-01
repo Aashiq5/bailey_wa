@@ -136,8 +136,12 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
   const whatsapp = req.app.get('whatsapp');
   const { to, mediaType, caption, isGroup } = req.body;
 
-  if (!to || !req.file) {
-    return res.status(400).json({ error: 'Missing "to" or file' });
+  if (!to) {
+    return res.status(400).json({ error: 'Missing "to" field' });
+  }
+  
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
   }
 
   if (!whatsapp.isConnected()) {
@@ -145,13 +149,26 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
   }
 
   try {
+    console.log('Sending media:', req.file.path, 'type:', mediaType);
+    
+    // Check if file exists
+    if (!fs.existsSync(req.file.path)) {
+      return res.status(400).json({ error: 'Uploaded file not found' });
+    }
+    
     const mediaBuffer = fs.readFileSync(req.file.path);
     const type = mediaType || getMediaType(req.file.mimetype);
     
     let jid = to;
-    if (isGroup && !to.endsWith('@g.us')) {
-      jid = `${to}@g.us`;
+    if (!jid.includes('@')) {
+      if (isGroup === 'true' || isGroup === true) {
+        jid = `${to}@g.us`;
+      } else {
+        jid = `${to}@s.whatsapp.net`;
+      }
     }
+
+    console.log('Sending to:', jid, 'type:', type, 'size:', mediaBuffer.length);
 
     const result = await whatsapp.sendMedia(jid, mediaBuffer, type, {
       caption: caption || '',
@@ -164,6 +181,7 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    console.error('Send media error:', error);
     // Clean up on error
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
