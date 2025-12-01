@@ -129,10 +129,10 @@ class WhatsAppService {
         if (type === 'notify') {
           for (const msg of messages) {
             if (!msg.key.fromMe) {
-              const messageData = this.parseMessage(msg);
+              const messageData = await this.parseMessage(msg);
               this.messages.unshift(messageData);
               this.io.emit('new-message', messageData);
-              console.log('New message from:', messageData.sender);
+              console.log('New message from:', messageData.sender, messageData.isGroup ? `(${messageData.groupName})` : '');
             }
           }
         }
@@ -157,7 +157,7 @@ class WhatsAppService {
     }
   }
 
-  parseMessage(msg) {
+  async parseMessage(msg) {
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
     
@@ -176,6 +176,31 @@ class WhatsAppService {
       if (!num) return '';
       return num.split('@')[0].split(':')[0];
     };
+    
+    // Get group name - fetch if not in cache
+    let groupName = null;
+    if (isGroup) {
+      // Try from cache first
+      const cachedGroup = this.groups.get(jid);
+      if (cachedGroup?.name) {
+        groupName = cachedGroup.name;
+      } else {
+        // Fetch group metadata
+        try {
+          const groupMeta = await this.sock.groupMetadata(jid);
+          groupName = groupMeta?.subject || 'Unknown Group';
+          // Cache it
+          this.groups.set(jid, {
+            id: jid,
+            name: groupName,
+            participants: groupMeta?.participants || []
+          });
+        } catch (e) {
+          console.log('Could not fetch group metadata:', e.message);
+          groupName = 'Group';
+        }
+      }
+    }
     
     let mediaInfo = null;
     const msgType = this.getMessageType(msg.message);
@@ -200,10 +225,6 @@ class WhatsAppService {
                msg.message?.imageMessage?.caption ||
                msg.message?.videoMessage?.caption ||
                '';
-    
-    // Get group name
-    const groupInfo = isGroup ? this.groups.get(jid) : null;
-    const groupName = groupInfo?.name || (isGroup ? 'Unknown Group' : null);
     
     return {
       id: msg.key.id,
