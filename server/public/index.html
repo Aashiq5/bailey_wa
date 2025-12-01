@@ -989,11 +989,6 @@
       document.getElementById('pairBtn').disabled = false;
     });
 
-    socket.on('history-sync', (data) => {
-      showToast(`Synced ${data.count} messages from history`, 'success');
-      loadMessages(); // Reload messages from server
-    });
-
     socket.on('new-message', (message) => {
       messages.unshift(message);
       renderConversationList();
@@ -1014,6 +1009,14 @@
     socket.on('groups-loaded', (data) => {
       groups = data;
       renderGroups();
+    });
+
+    socket.on('hourly-check', (data) => {
+      showToast(`Hourly check: ${data.unreadCount} new messages`, 'success');
+      if (data.messages.length > 0) {
+        messages = [...data.messages, ...messages];
+        renderConversationList();
+      }
     });
 
     // Login method switching
