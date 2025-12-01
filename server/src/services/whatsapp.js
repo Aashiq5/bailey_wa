@@ -4,7 +4,8 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-  downloadMediaMessage
+  downloadMediaMessage,
+  makeInMemoryStore
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
@@ -21,10 +22,33 @@ class WhatsAppService {
     this.contacts = new Map();
     this.groups = new Map();
     this.messages = [];
+    this.rawMessages = new Map(); // Store raw messages for download
     this.authFolder = path.join(__dirname, '../../auth_info');
     this.mediaFolder = path.join(__dirname, '../../media');
+    this.storeFile = path.join(__dirname, '../../store.json');
     this.usePairingCode = false;
     this.phoneNumber = null;
+    
+    // Create message store for syncing history
+    this.store = makeInMemoryStore({ 
+      logger: pino({ level: 'silent' }) 
+    });
+    
+    // Load store from file if exists
+    if (fs.existsSync(this.storeFile)) {
+      try {
+        this.store.readFromFile(this.storeFile);
+      } catch (e) {
+        console.log('Could not load store:', e.message);
+      }
+    }
+    
+    // Save store periodically
+    setInterval(() => {
+      try {
+        this.store.writeToFile(this.storeFile);
+      } catch (e) {}
+    }, 30000);
     
     // Create media folder
     if (!fs.existsSync(this.mediaFolder)) {
@@ -54,8 +78,12 @@ class WhatsAppService {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
-        generateHighQualityLinkPreview: true
+        generateHighQualityLinkPreview: true,
+        syncFullHistory: true // Enable full history sync
       });
+      
+      // Bind store to socket
+      this.store.bind(this.sock.ev);
 
       // Handle connection updates
       this.sock.ev.on('connection.update', async (update) => {
@@ -118,11 +146,39 @@ class WhatsAppService {
           // Load contacts and groups
           await this.loadContacts();
           await this.loadGroups();
+          
+          // Fetch recent chats/messages
+          await this.fetchRecentMessages();
         }
       });
 
       // Save credentials on update
       this.sock.ev.on('creds.update', saveCreds);
+      
+      // Handle message history sync
+      this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
+        console.log(`Received ${messages?.length || 0} messages from history sync`);
+        if (messages && messages.length > 0) {
+          for (const msg of messages) {
+            if (!msg.key.fromMe) {
+              try {
+                const messageData = await this.parseMessage(msg);
+                // Avoid duplicates
+                if (!this.messages.find(m => m.id === messageData.id)) {
+                  this.messages.push(messageData);
+                  this.rawMessages.set(messageData.id, msg);
+                }
+              } catch (e) {
+                // Skip problematic messages
+              }
+            }
+          }
+          // Sort by timestamp descending
+          this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          this.io.emit('messages-synced', { count: this.messages.length });
+          console.log(`Total messages: ${this.messages.length}`);
+        }
+      });
 
       // Handle incoming messages
       this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
@@ -130,6 +186,8 @@ class WhatsAppService {
           for (const msg of messages) {
             if (!msg.key.fromMe) {
               const messageData = await this.parseMessage(msg);
+              // Store raw message for download
+              this.rawMessages.set(messageData.id, msg);
               this.messages.unshift(messageData);
               this.io.emit('new-message', messageData);
               console.log('New message from:', messageData.sender, messageData.isGroup ? `(${messageData.groupName})` : '');
@@ -239,8 +297,7 @@ class WhatsAppService {
       type: msgType,
       hasMedia: !!mediaInfo,
       mediaType: mediaInfo?.mediaType || null,
-      mediaInfo: mediaInfo,
-      rawMessage: msg // Store for media download
+      mediaInfo: mediaInfo
     };
   }
 
@@ -255,9 +312,42 @@ class WhatsAppService {
     return 'unknown';
   }
 
+  async fetchRecentMessages() {
+    try {
+      console.log('Fetching recent messages from chats...');
+      // Get all chats from store
+      const chats = this.store.chats.all();
+      console.log(`Found ${chats.length} chats`);
+      
+      for (const chat of chats.slice(0, 50)) { // Limit to 50 chats
+        try {
+          const msgs = await this.store.loadMessages(chat.id, 20); // 20 messages per chat
+          for (const msg of msgs) {
+            if (!msg.key.fromMe && msg.message) {
+              const messageData = await this.parseMessage(msg);
+              if (!this.messages.find(m => m.id === messageData.id)) {
+                this.messages.push(messageData);
+                this.rawMessages.set(messageData.id, msg);
+              }
+            }
+          }
+        } catch (e) {
+          // Skip chats with errors
+        }
+      }
+      
+      // Sort by timestamp descending
+      this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      console.log(`Loaded ${this.messages.length} messages from history`);
+      this.io.emit('messages-loaded', { count: this.messages.length });
+    } catch (error) {
+      console.error('Error fetching recent messages:', error);
+    }
+  }
+
   async loadContacts() {
     try {
-      const contacts = await this.sock.store?.contacts || {};
+      const contacts = this.store?.contacts || {};
       for (const [id, contact] of Object.entries(contacts)) {
         this.contacts.set(id, contact);
       }
@@ -444,14 +534,22 @@ class WhatsAppService {
   // Download media from a message
   async downloadMedia(messageId) {
     try {
-      // Find the message with this ID
-      const msg = this.messages.find(m => m.id === messageId);
-      if (!msg || !msg.rawMessage) {
-        throw new Error('Message not found or no media');
+      // Find the raw message from our map
+      const rawMsg = this.rawMessages.get(messageId);
+      const msgInfo = this.messages.find(m => m.id === messageId);
+      
+      if (!rawMsg) {
+        throw new Error('Message not found - media may have expired');
+      }
+      
+      if (!rawMsg.message) {
+        throw new Error('No media content in message');
       }
 
+      console.log('Downloading media for message:', messageId);
+      
       const buffer = await downloadMediaMessage(
-        msg.rawMessage,
+        rawMsg,
         'buffer',
         {},
         {
@@ -460,14 +558,23 @@ class WhatsAppService {
         }
       );
 
+      if (!buffer || buffer.length === 0) {
+        throw new Error('Downloaded media is empty');
+      }
+
       // Get mimetype from the raw message
-      const mediaType = msg.mediaType || msg.type;
-      const rawMedia = msg.rawMessage.message?.[`${mediaType}Message`];
-      const mimetype = rawMedia?.mimetype || msg.mediaInfo?.mimetype;
+      const mediaType = msgInfo?.mediaType || msgInfo?.type || 'document';
+      const rawMedia = rawMsg.message?.[`${mediaType}Message`] || 
+                       rawMsg.message?.imageMessage ||
+                       rawMsg.message?.videoMessage ||
+                       rawMsg.message?.audioMessage ||
+                       rawMsg.message?.documentMessage;
+      
+      const mimetype = rawMedia?.mimetype || 'application/octet-stream';
       
       // Generate filename with proper extension
       const ext = this.getExtensionFromMimetype(mimetype);
-      const originalFilename = rawMedia?.fileName || msg.mediaInfo?.filename;
+      const originalFilename = rawMedia?.fileName || msgInfo?.mediaInfo?.filename;
       const filename = originalFilename || `${messageId}.${ext}`;
       
       // Ensure filename has extension
@@ -476,6 +583,7 @@ class WhatsAppService {
 
       // Save to file
       fs.writeFileSync(filepath, buffer);
+      console.log('Media saved to:', filepath, 'Size:', buffer.length);
 
       return {
         success: true,
@@ -485,7 +593,7 @@ class WhatsAppService {
         mimetype: mimetype
       };
     } catch (error) {
-      console.error('Error downloading media:', error);
+      console.error('Error downloading media:', error.message);
       throw error;
     }
   }

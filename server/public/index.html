@@ -1011,12 +1011,14 @@
       renderGroups();
     });
 
-    socket.on('hourly-check', (data) => {
-      showToast(`Hourly check: ${data.unreadCount} new messages`, 'success');
-      if (data.messages.length > 0) {
-        messages = [...data.messages, ...messages];
-        renderConversationList();
-      }
+    socket.on('messages-synced', (data) => {
+      showToast(`Synced ${data.count} messages from history`, 'success');
+      loadMessages();
+    });
+
+    socket.on('messages-loaded', (data) => {
+      showToast(`Loaded ${data.count} messages`, 'success');
+      loadMessages();
     });
 
     // Login method switching
