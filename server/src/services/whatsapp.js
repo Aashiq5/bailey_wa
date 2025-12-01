@@ -18,6 +18,7 @@ class WhatsAppService {
     this.qrCode = null;
     this.pairingCode = null;
     this.connected = false;
+    this.reconnecting = false;
     this.contacts = new Map();
     this.groups = new Map();
     this.messages = [];
@@ -34,6 +35,12 @@ class WhatsAppService {
   }
 
   async connect(phoneNumber = null) {
+    // Prevent multiple simultaneous connection attempts
+    if (this.reconnecting) {
+      console.log('Already reconnecting, skipping...');
+      return;
+    }
+    
     try {
       // Ensure auth folder exists
       if (!fs.existsSync(this.authFolder)) {
@@ -92,12 +99,16 @@ class WhatsAppService {
           this.pairingCode = null;
           this.io.emit('status', { connected: false });
           
-          const shouldReconnect = 
-            lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+          const statusCode = lastDisconnect?.error?.output?.statusCode;
+          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
           
-          if (shouldReconnect) {
-            console.log('Connection closed. Reconnecting...');
-            setTimeout(() => this.connect(), 3000);
+          if (shouldReconnect && !this.reconnecting) {
+            console.log('Connection closed (code:', statusCode, '). Reconnecting in 10s...');
+            this.reconnecting = true;
+            setTimeout(() => {
+              this.reconnecting = false;
+              this.connect();
+            }, 10000); // 10 second delay
           } else {
             console.log('Logged out. Please scan QR code again.');
             // Clear auth to force new QR
@@ -106,12 +117,17 @@ class WhatsAppService {
             }
             this.usePairingCode = false;
             this.phoneNumber = null;
-            setTimeout(() => this.connect(), 1000);
+            this.reconnecting = true;
+            setTimeout(() => {
+              this.reconnecting = false;
+              this.connect();
+            }, 5000);
           }
         }
 
         if (connection === 'open') {
           this.connected = true;
+          this.reconnecting = false;
           this.qrCode = null;
           this.pairingCode = null;
           this.io.emit('status', { connected: true });
@@ -182,10 +198,26 @@ class WhatsAppService {
         }
         this.io.emit('contacts-updated', this.getContacts());
       });
+      
+      // Handle contacts upsert (initial load)
+      this.sock.ev.on('contacts.upsert', (contacts) => {
+        for (const contact of contacts) {
+          if (contact.id) {
+            this.contacts.set(contact.id, contact);
+          }
+        }
+        console.log(`Contacts upserted: ${contacts.length}`);
+      });
 
     } catch (error) {
-      console.error('Connection error:', error);
-      setTimeout(() => this.connect(), 5000);
+      console.error('Connection error:', error.message);
+      if (!this.reconnecting) {
+        this.reconnecting = true;
+        setTimeout(() => {
+          this.reconnecting = false;
+          this.connect();
+        }, 10000);
+      }
     }
   }
 
@@ -195,12 +227,12 @@ class WhatsAppService {
     
     // Get the actual sender for group messages
     let senderJid = jid;
-    let senderName = msg.pushName || jid.split('@')[0];
+    let senderName = msg.pushName || null;
     
     if (isGroup && msg.key.participant) {
       // For group messages, participant is the actual sender
       senderJid = msg.key.participant;
-      senderName = msg.pushName || senderJid.split('@')[0];
+      senderName = msg.pushName || null;
     }
     
     // Clean up weird phone numbers (remove :XX suffix from JID)
@@ -208,6 +240,19 @@ class WhatsAppService {
       if (!num) return '';
       return num.split('@')[0].split(':')[0];
     };
+    
+    // Try to get name from contacts if pushName not available
+    if (!senderName) {
+      const contact = this.contacts.get(senderJid);
+      if (contact?.name || contact?.notify || contact?.verifiedName) {
+        senderName = contact.name || contact.notify || contact.verifiedName;
+      }
+    }
+    
+    // If still no name, use the clean number
+    if (!senderName) {
+      senderName = cleanNumber(senderJid);
+    }
     
     // Get group name - fetch if not in cache
     let groupName = null;

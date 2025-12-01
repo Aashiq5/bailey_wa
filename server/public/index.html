@@ -1601,7 +1601,26 @@
 
     function formatTime(timestamp) {
       const date = new Date(timestamp);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const now = new Date();
+      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+      
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      if (diffDays === 0) {
+        // Today - just show time
+        return timeStr;
+      } else if (diffDays === 1) {
+        // Yesterday
+        return `Yesterday ${timeStr}`;
+      } else if (diffDays < 7) {
+        // This week - show day name
+        const dayName = date.toLocaleDateString([], { weekday: 'short' });
+        return `${dayName} ${timeStr}`;
+      } else {
+        // Older - show full date
+        const dateStr = date.toLocaleDateString([], { day: '2-digit', month: 'short' });
+        return `${dateStr} ${timeStr}`;
+      }
     }
 
     function showToast(message, type = '') {
