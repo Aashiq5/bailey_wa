@@ -149,15 +149,26 @@ class WhatsAppService {
       this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
         console.log(`Received ${messages?.length || 0} messages from history sync`);
         if (messages && messages.length > 0) {
-          const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+          // 14 days ago to catch more messages
+          const twoWeeksAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
           let addedCount = 0;
+          let skippedOld = 0;
           
           for (const msg of messages) {
             if (!msg.key.fromMe) {
               try {
-                // Filter: only messages from last week
-                const msgTime = msg.messageTimestamp * 1000;
-                if (msgTime < oneWeekAgo) continue;
+                // messageTimestamp could be seconds or Long object
+                let msgTimestamp = msg.messageTimestamp;
+                if (typeof msgTimestamp === 'object' && msgTimestamp.low !== undefined) {
+                  msgTimestamp = msgTimestamp.low;
+                }
+                const msgTime = Number(msgTimestamp) * 1000;
+                
+                // Filter: only messages from last 2 weeks
+                if (msgTime < twoWeeksAgo) {
+                  skippedOld++;
+                  continue;
+                }
                 
                 const messageData = await this.parseMessage(msg);
                 // Avoid duplicates
@@ -174,7 +185,7 @@ class WhatsAppService {
           // Sort by timestamp descending (newest first)
           this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           this.io.emit('messages-synced', { count: this.messages.length });
-          console.log(`Added ${addedCount} messages from last week. Total: ${this.messages.length}`);
+          console.log(`Added ${addedCount} messages, skipped ${skippedOld} old. Total: ${this.messages.length}`);
         }
       });
 
