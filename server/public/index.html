@@ -627,6 +627,7 @@
       padding: 10px 20px;
       background: white;
       border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
     }
 
     .toolbar-btn {
@@ -642,6 +643,91 @@
       background: var(--secondary);
       color: white;
       border-color: var(--secondary);
+    }
+
+    /* Conversation styles */
+    .conversation-header {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 15px 20px;
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+    }
+
+    .back-btn {
+      font-size: 16px;
+    }
+
+    #conversationTitle {
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .conversation-item {
+      display: flex;
+      align-items: center;
+      padding: 15px 20px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      background: white;
+    }
+
+    .conversation-item:hover {
+      background: var(--bg-light);
+    }
+
+    .conversation-item .avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 20px;
+      margin-right: 15px;
+      flex-shrink: 0;
+    }
+
+    .conversation-item .avatar.group-avatar {
+      background: #7c3aed;
+    }
+
+    .conversation-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .conversation-name {
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .conversation-preview {
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .conversation-time {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .conversation-badge {
+      background: var(--secondary);
+      color: white;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-left: 10px;
     }
 
     /* Responsive */
@@ -728,10 +814,21 @@
         <div class="toolbar">
           <button class="toolbar-btn" onclick="refreshMessages()">🔄 Refresh</button>
           <button class="toolbar-btn" onclick="checkMessages()">📩 Check Now</button>
+          <button class="toolbar-btn" id="viewToggle" onclick="toggleChatView()">📋 List View</button>
         </div>
-        <div id="messagesList" class="message-list">
+        <!-- Conversation List View -->
+        <div id="conversationList" class="list">
           <div class="empty-state">
-            <p>No messages yet. Messages will appear here as they arrive.</p>
+            <p>No conversations yet.</p>
+          </div>
+        </div>
+        <!-- Single Conversation View (hidden by default) -->
+        <div id="conversationView" style="display:none;">
+          <div class="conversation-header" onclick="backToList()">
+            <span class="back-btn">← Back</span>
+            <span id="conversationTitle">Chat</span>
+          </div>
+          <div id="messagesList" class="message-list">
           </div>
         </div>
       </div>
@@ -894,8 +991,14 @@
 
     socket.on('new-message', (message) => {
       messages.unshift(message);
-      renderMessages();
-      showToast(`New message from ${message.sender}`, 'success');
+      renderConversationList();
+      // If viewing a conversation, update it too
+      if (currentConversation && (message.from === currentConversation.id || message.senderNumber === currentConversation.id)) {
+        currentConversation.messages.unshift(message);
+        renderMessages(currentConversation.messages);
+      }
+      const senderName = message.isGroup ? `${message.sender} (${message.groupName})` : message.sender;
+      showToast(`New message from ${senderName}`, 'success');
     });
 
     socket.on('contacts-updated', (data) => {
@@ -912,7 +1015,7 @@
       showToast(`Hourly check: ${data.unreadCount} new messages`, 'success');
       if (data.messages.length > 0) {
         messages = [...data.messages, ...messages];
-        renderMessages();
+        renderConversationList();
       }
     });
 
@@ -1007,7 +1110,7 @@
         const res = await fetch('/api/messages?limit=50');
         if (res.ok) {
           messages = await res.json();
-          renderMessages();
+          renderConversationList();
         }
       } catch (error) {
         console.error('Error loading messages:', error);
@@ -1017,6 +1120,103 @@
     function refreshMessages() {
       loadMessages();
       showToast('Messages refreshed', 'success');
+    }
+
+    // Group messages by conversation (sender/group)
+    function getConversations() {
+      const convMap = new Map();
+      
+      for (const msg of messages) {
+        // Use groupId for groups, or sender number for individuals
+        const key = msg.isGroup ? msg.from : msg.senderNumber || msg.from;
+        const name = msg.isGroup ? (msg.groupName || 'Unknown Group') : msg.sender;
+        
+        if (!convMap.has(key)) {
+          convMap.set(key, {
+            id: key,
+            name: name,
+            isGroup: msg.isGroup,
+            messages: [],
+            lastMessage: msg,
+            unread: 0
+          });
+        }
+        convMap.get(key).messages.push(msg);
+      }
+      
+      // Sort by latest message
+      return Array.from(convMap.values()).sort((a, b) => 
+        new Date(b.lastMessage.timestamp) - new Date(a.lastMessage.timestamp)
+      );
+    }
+
+    function renderConversationList() {
+      const container = document.getElementById('conversationList');
+      const conversations = getConversations();
+      
+      if (conversations.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No conversations yet.</p></div>';
+        return;
+      }
+
+      container.innerHTML = conversations.map(conv => {
+        const preview = conv.lastMessage.content || 
+          (conv.lastMessage.hasMedia ? `📎 ${conv.lastMessage.mediaType}` : '');
+        const time = formatTime(conv.lastMessage.timestamp);
+        const avatar = conv.isGroup ? '👪' : conv.name.charAt(0).toUpperCase();
+        const avatarClass = conv.isGroup ? 'avatar group-avatar' : 'avatar';
+        
+        return `
+          <div class="conversation-item" onclick="openConversation('${conv.id}')">
+            <div class="${avatarClass}">${avatar}</div>
+            <div class="conversation-info">
+              <div class="conversation-name">
+                <span>${escapeHtml(conv.name)}</span>
+                <span class="conversation-time">${time}</span>
+              </div>
+              <div class="conversation-preview">${escapeHtml(preview.substring(0, 50))}</div>
+            </div>
+            <span class="conversation-badge">${conv.messages.length}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    let currentConversation = null;
+
+    function openConversation(convId) {
+      const conversations = getConversations();
+      currentConversation = conversations.find(c => c.id === convId);
+      
+      if (!currentConversation) return;
+      
+      document.getElementById('conversationList').style.display = 'none';
+      document.getElementById('conversationView').style.display = 'block';
+      document.getElementById('conversationTitle').textContent = currentConversation.name;
+      
+      renderMessages(currentConversation.messages);
+    }
+
+    function backToList() {
+      document.getElementById('conversationList').style.display = 'block';
+      document.getElementById('conversationView').style.display = 'none';
+      currentConversation = null;
+    }
+
+    function toggleChatView() {
+      // Toggle between list and all messages view
+      const btn = document.getElementById('viewToggle');
+      if (currentConversation) {
+        backToList();
+        btn.textContent = '📋 List View';
+      } else {
+        // Show all messages
+        document.getElementById('conversationList').style.display = 'none';
+        document.getElementById('conversationView').style.display = 'block';
+        document.getElementById('conversationTitle').textContent = 'All Messages';
+        renderMessages(messages);
+        btn.textContent = '👥 Group View';
+      }
     }
 
     async function checkMessages() {
@@ -1070,14 +1270,14 @@
         groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
     }
 
-    function renderMessages() {
+    function renderMessages(msgList = messages) {
       const container = document.getElementById('messagesList');
-      if (messages.length === 0) {
+      if (!msgList || msgList.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>No messages yet</p></div>';
         return;
       }
 
-      container.innerHTML = messages.map(msg => {
+      container.innerHTML = msgList.map(msg => {
         // Build sender display - show group name if from group
         let senderDisplay = msg.sender;
         if (msg.isGroup && msg.groupName) {

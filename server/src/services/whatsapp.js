@@ -460,20 +460,29 @@ class WhatsAppService {
         }
       );
 
-      // Generate filename
-      const ext = this.getExtensionFromMimetype(msg.media?.mimetype);
-      const filename = msg.media?.filename || `${messageId}.${ext}`;
-      const filepath = path.join(this.mediaFolder, filename);
+      // Get mimetype from the raw message
+      const mediaType = msg.mediaType || msg.type;
+      const rawMedia = msg.rawMessage.message?.[`${mediaType}Message`];
+      const mimetype = rawMedia?.mimetype || msg.mediaInfo?.mimetype;
+      
+      // Generate filename with proper extension
+      const ext = this.getExtensionFromMimetype(mimetype);
+      const originalFilename = rawMedia?.fileName || msg.mediaInfo?.filename;
+      const filename = originalFilename || `${messageId}.${ext}`;
+      
+      // Ensure filename has extension
+      const finalFilename = filename.includes('.') ? filename : `${filename}.${ext}`;
+      const filepath = path.join(this.mediaFolder, finalFilename);
 
       // Save to file
       fs.writeFileSync(filepath, buffer);
 
       return {
         success: true,
-        filename,
+        filename: finalFilename,
         filepath,
         size: buffer.length,
-        mimetype: msg.media?.mimetype
+        mimetype: mimetype
       };
     } catch (error) {
       console.error('Error downloading media:', error);
