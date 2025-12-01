@@ -54,7 +54,39 @@ class WhatsAppService {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
-        generateHighQualityLinkPreview: true
+        generateHighQualityLinkPreview: true,
+        syncFullHistory: true  // Enable full history sync
+      });
+
+      // Handle message history sync (gets old messages)
+      this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
+        console.log(`History sync: ${messages.length} messages, ${chats.length} chats`);
+        
+        // Process historical messages
+        for (const msg of messages) {
+          if (!msg.key.fromMe) {
+            try {
+              const messageData = await this.parseMessage(msg);
+              // Avoid duplicates
+              if (!this.messages.find(m => m.id === messageData.id)) {
+                this.messages.push(messageData);
+              }
+            } catch (e) {
+              // Skip messages that fail to parse
+            }
+          }
+        }
+        
+        // Sort by timestamp (newest first)
+        this.messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        // Notify frontend
+        this.io.emit('history-sync', { 
+          count: this.messages.length,
+          isLatest 
+        });
+        
+        console.log(`Total messages after sync: ${this.messages.length}`);
       });
 
       // Handle connection updates
