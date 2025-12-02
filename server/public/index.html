@@ -1542,7 +1542,9 @@
         // Build sender display - show group name if from group
         let senderDisplay = msg.sender;
         if (msg.isGroup && msg.groupName) {
-          senderDisplay = `${msg.sender} • <span class="group-tag">👪 ${escapeHtml(msg.groupName)}</span>`;
+          // Show sender name, their number, and group name
+          const senderNumber = msg.senderNumber || '';
+          senderDisplay = `${msg.sender} ${senderNumber ? `(${senderNumber})` : ''} • <span class="group-tag">👪 ${escapeHtml(msg.groupName)}</span>`;
         }
         
         // Build media HTML
