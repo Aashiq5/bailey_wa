@@ -244,8 +244,12 @@ class WhatsAppService {
     
     if (isGroup && msg.key.participant) {
       // For group messages, participant is the actual sender
+      // Baileys uses jidNormalizedUser to remove device suffixes
       senderJid = msg.key.participant;
       senderName = msg.pushName || null;
+      
+      // Log for debugging
+      console.log('Group message - Raw participant:', msg.key.participant);
     }
     
     // Clean up weird phone numbers (remove :XX suffix from JID and format)
