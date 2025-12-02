@@ -352,10 +352,25 @@
       margin-bottom: 4px;
     }
 
+    .message-sender .sender-number {
+      cursor: pointer;
+      text-decoration: underline;
+      color: #1a73e8;
+    }
+
+    .message-sender .sender-number:hover {
+      color: #0d47a1;
+    }
+
     .message-sender .group-tag {
       color: #7c3aed;
       font-weight: 500;
       font-size: 11px;
+      cursor: pointer;
+    }
+
+    .message-sender .group-tag:hover {
+      text-decoration: underline;
     }
 
     .message.from-group {
@@ -1542,9 +1557,11 @@
         // Build sender display - show group name if from group
         let senderDisplay = msg.sender;
         if (msg.isGroup && msg.groupName) {
-          // Show sender name, their number, and group name
+          // Show sender name, their number (clickable), and group name (clickable)
           const senderNumber = msg.senderNumber || '';
-          senderDisplay = `${msg.sender} ${senderNumber ? `(${senderNumber})` : ''} • <span class="group-tag">👪 ${escapeHtml(msg.groupName)}</span>`;
+          const numberLink = senderNumber ? `<span class="sender-number" onclick="selectContactFromMessage(event, '${senderNumber}')">(${senderNumber})</span>` : '';
+          const groupLink = `<span class="group-tag" onclick="selectGroupFromMessage(event, '${escapeHtml(msg.from)}')">👪 ${escapeHtml(msg.groupName)}</span>`;
+          senderDisplay = `${msg.sender} ${numberLink} • ${groupLink}`;
         }
         
         // Build media HTML
@@ -1658,6 +1675,26 @@
         toggleSendMode();
       }
       document.getElementById('groupSelect').value = id;
+      switchTab('send');
+      showToast('Group selected', 'success');
+    }
+
+    // Select contact from message (when clicking phone number in group message)
+    function selectContactFromMessage(event, number) {
+      event.stopPropagation(); // Prevent message click
+      document.getElementById('sendMode').value = 'single';
+      toggleSendMode();
+      document.getElementById('phoneNumber').value = number;
+      switchTab('send');
+      showToast('Contact selected: ' + number, 'success');
+    }
+
+    // Select group from message (when clicking group tag)
+    function selectGroupFromMessage(event, groupId) {
+      event.stopPropagation(); // Prevent message click
+      document.getElementById('sendMode').value = 'group';
+      toggleSendMode();
+      document.getElementById('groupSelect').value = groupId;
       switchTab('send');
       showToast('Group selected', 'success');
     }
