@@ -153,6 +153,11 @@ class WhatsAppService {
           
           for (const msg of messages) {
             try {
+              // Skip status messages
+              if (msg.key?.remoteJid?.includes('status@broadcast')) {
+                continue;
+              }
+              
               const messageData = await this.parseMessage(msg);
               // Avoid duplicates
               if (!this.messages.find(m => m.id === messageData.id)) {
@@ -161,7 +166,7 @@ class WhatsAppService {
                 addedCount++;
               }
             } catch (e) {
-              // Skip problematic messages
+              console.log('Error parsing message:', e.message);
             }
           }
           // Sort by timestamp descending (newest first)
@@ -175,12 +180,21 @@ class WhatsAppService {
       this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type === 'notify') {
           for (const msg of messages) {
-            const messageData = await this.parseMessage(msg);
-            // Store raw message for download
-            this.rawMessages.set(messageData.id, msg);
-            this.messages.unshift(messageData);
-            this.io.emit('new-message', messageData);
-            console.log(messageData.fromMe ? 'Sent message to:' : 'New message from:', messageData.sender, messageData.isGroup ? `(${messageData.groupName})` : '');
+            try {
+              // Skip status messages
+              if (msg.key?.remoteJid?.includes('status@broadcast')) {
+                continue;
+              }
+              
+              const messageData = await this.parseMessage(msg);
+              // Store raw message for download
+              this.rawMessages.set(messageData.id, msg);
+              this.messages.unshift(messageData);
+              this.io.emit('new-message', messageData);
+              console.log(messageData.fromMe ? 'Sent message to:' : 'New message from:', messageData.sender, messageData.isGroup ? `(${messageData.groupName})` : '');
+            } catch (e) {
+              console.log('Error processing message:', e.message);
+            }
           }
         }
       });
@@ -237,19 +251,35 @@ class WhatsAppService {
     // Clean up weird phone numbers (remove :XX suffix from JID and format)
     const cleanNumber = (num) => {
       if (!num) return '';
-      // Extract number from JID format: "916369124116:15@s.whatsapp.net" or "916369124116@s.whatsapp.net"
-      let cleaned = num.split('@')[0]; // Remove @s.whatsapp.net or @g.us
       
-      // If there's a colon, take only the part before it
+      // Handle special cases
+      if (num.includes('status@broadcast')) return 'status';
+      
+      // Extract number from JID format: "916369124116:15@s.whatsapp.net" or "916369124116@s.whatsapp.net"
+      let cleaned = num;
+      
+      // Remove domain part (@s.whatsapp.net or @g.us)
+      if (cleaned.includes('@')) {
+        cleaned = cleaned.split('@')[0];
+      }
+      
+      // If there's a colon, take only the part BEFORE it (the actual phone number)
+      // Format: "916369124116:15" -> "916369124116"
       if (cleaned.includes(':')) {
         cleaned = cleaned.split(':')[0];
       }
       
-      // Remove any non-digit characters except +
-      cleaned = cleaned.replace(/[^\d+]/g, '');
+      // Remove any non-digit characters
+      cleaned = cleaned.replace(/\D/g, '');
       
-      // Add + prefix if not already there
-      return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+      // Validate: phone numbers should be 10-15 digits
+      if (cleaned.length < 10 || cleaned.length > 15) {
+        console.log(`Invalid phone number length: ${cleaned} (original: ${num})`);
+        return num; // Return original if suspicious
+      }
+      
+      // Add + prefix
+      return `+${cleaned}`;
     };
     
     // Try to get name from contacts if pushName not available
