@@ -394,6 +394,23 @@
       margin-top: 4px;
     }
 
+    /* Date Divider */
+    .date-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    .date-divider span {
+      background: rgba(0, 0, 0, 0.08);
+      color: var(--text-secondary);
+      padding: 6px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
     /* Send Form */
     .send-section {
       padding: 20px;
@@ -1339,6 +1356,10 @@
       document.getElementById('conversationTitle').textContent = currentConversation.name;
       
       renderMessages(currentConversation.messages);
+      // Focus on input
+      setTimeout(() => {
+        document.getElementById('chatInput')?.focus();
+      }, 100);
     }
 
     function backToList() {
@@ -1496,7 +1517,28 @@
         return;
       }
 
-      container.innerHTML = msgList.map(msg => {
+      let lastDate = null;
+      const html = [];
+      
+      // Sort messages by timestamp (oldest first for proper display)
+      const sortedMessages = [...msgList].sort((a, b) => 
+        new Date(a.timestamp) - new Date(b.timestamp)
+      );
+
+      for (const msg of sortedMessages) {
+        const msgDate = new Date(msg.timestamp);
+        const dateKey = formatDateKey(msgDate);
+        
+        // Add date divider if date changed
+        if (dateKey !== lastDate) {
+          html.push(`
+            <div class="date-divider">
+              <span>${formatDateDivider(msgDate)}</span>
+            </div>
+          `);
+          lastDate = dateKey;
+        }
+        
         // Build sender display - show group name if from group
         let senderDisplay = msg.sender;
         if (msg.isGroup && msg.groupName) {
@@ -1528,15 +1570,19 @@
         // Determine message class based on fromMe
         const messageClass = msg.fromMe ? 'outgoing' : 'incoming';
         
-        return `
+        html.push(`
           <div class="message ${messageClass} ${msg.isGroup ? 'from-group' : ''}">
             <div class="message-sender">${senderDisplay}</div>
             ${contentHtml}
             ${mediaHtml}
             <div class="message-time">${formatTime(msg.timestamp)}</div>
           </div>
-        `;
-      }).join('');
+        `);
+      }
+      
+      container.innerHTML = html.join('');
+      // Scroll to bottom
+      container.scrollTop = container.scrollHeight;
     }
 
     // Make URLs clickable
@@ -1821,25 +1867,29 @@
 
     function formatTime(timestamp) {
       const date = new Date(timestamp);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatDateKey(date) {
+      return date.toLocaleDateString();
+    }
+
+    function formatDateDivider(date) {
       const now = new Date();
-      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-      
-      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const diffDays = Math.floor((today - msgDate) / (1000 * 60 * 60 * 24));
       
       if (diffDays === 0) {
-        // Today - just show time
-        return timeStr;
+        return 'Today';
       } else if (diffDays === 1) {
-        // Yesterday
-        return `Yesterday ${timeStr}`;
+        return 'Yesterday';
       } else if (diffDays < 7) {
-        // This week - show day name
-        const dayName = date.toLocaleDateString([], { weekday: 'short' });
-        return `${dayName} ${timeStr}`;
+        return date.toLocaleDateString([], { weekday: 'long' });
+      } else if (date.getFullYear() === now.getFullYear()) {
+        return date.toLocaleDateString([], { day: 'numeric', month: 'long' });
       } else {
-        // Older - show full date
-        const dateStr = date.toLocaleDateString([], { day: '2-digit', month: 'short' });
-        return `${dateStr} ${timeStr}`;
+        return date.toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
       }
     }
 
