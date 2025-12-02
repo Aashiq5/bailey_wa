@@ -18,13 +18,18 @@
     :root {
       --primary: #075E54;
       --primary-dark: #054d44;
+      --primary-light: #128C7E;
       --secondary: #25D366;
+      --secondary-hover: #20c55e;
       --light-green: #DCF8C6;
       --bg-light: #f0f2f5;
       --bg-chat: #e5ddd5;
       --text-primary: #111b21;
       --text-secondary: #667781;
       --border: #e9edef;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.1);
+      --shadow-lg: 0 4px 16px rgba(0,0,0,0.15);
     }
 
     body {
@@ -36,7 +41,7 @@
 
     /* Header */
     .header {
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
       color: white;
       padding: 16px 20px;
       display: flex;
@@ -45,7 +50,7 @@
       position: sticky;
       top: 0;
       z-index: 100;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: var(--shadow-md);
     }
 
     .header h1 {
@@ -223,13 +228,20 @@
       font-weight: 500;
       cursor: pointer;
       border-bottom: 3px solid transparent;
-      transition: all 0.2s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       white-space: nowrap;
+      position: relative;
+    }
+
+    .tab:hover {
+      color: rgba(255,255,255,0.9);
+      background: rgba(255,255,255,0.05);
     }
 
     .tab.active {
       color: white;
       border-bottom-color: white;
+      background: rgba(255,255,255,0.1);
     }
 
     /* Tab Content */
@@ -249,25 +261,44 @@
     .list-item {
       display: flex;
       align-items: center;
-      padding: 12px 20px;
+      padding: 14px 20px;
       border-bottom: 1px solid var(--border);
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .list-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: var(--secondary);
+      transform: scaleY(0);
+      transition: transform 0.2s ease;
     }
 
     .list-item:hover {
       background: var(--bg-light);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .list-item:hover::before {
+      transform: scaleY(1);
     }
 
     .list-item:active {
       background: #e5e5e5;
+      transform: scale(0.99);
     }
 
     .avatar {
       width: 50px;
       height: 50px;
       border-radius: 50%;
-      background: var(--secondary);
+      background: linear-gradient(135deg, var(--secondary) 0%, #20c55e 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -276,10 +307,16 @@
       font-size: 18px;
       margin-right: 15px;
       flex-shrink: 0;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s ease;
     }
 
     .avatar.group {
-      background: #00a884;
+      background: linear-gradient(135deg, #7c3aed 0%, #9333ea 100%);
+    }
+
+    .list-item:hover .avatar {
+      transform: scale(1.05);
     }
 
     .list-item-content {
@@ -327,11 +364,24 @@
 
     .message {
       max-width: 85%;
-      padding: 8px 12px;
-      margin: 4px 0;
-      border-radius: 8px;
+      padding: 10px 14px;
+      margin: 6px 0;
+      border-radius: 10px;
       background: white;
-      box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+      box-shadow: var(--shadow-sm);
+      animation: messageSlideIn 0.3s ease;
+      position: relative;
+    }
+
+    @keyframes messageSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .message.incoming {
@@ -341,7 +391,7 @@
 
     .message.outgoing {
       margin-left: auto;
-      background: var(--light-green);
+      background: linear-gradient(135deg, var(--light-green) 0%, #d4f4be 100%);
       border-top-right-radius: 0;
     }
 
@@ -483,12 +533,20 @@
     }
 
     .btn-primary {
-      background: var(--secondary);
+      background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-hover) 100%);
       color: white;
+      box-shadow: var(--shadow-sm);
     }
 
     .btn-primary:hover {
-      background: #20c55e;
+      background: linear-gradient(135deg, var(--secondary-hover) 0%, var(--secondary) 100%);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+      box-shadow: var(--shadow-sm);
     }
 
     .btn-primary:disabled {
@@ -669,12 +727,22 @@
       background: white;
       font-size: 13px;
       cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .toolbar-btn:hover {
+      background: var(--bg-light);
+      border-color: var(--primary);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
     }
 
     .toolbar-btn.active {
       background: var(--secondary);
       color: white;
       border-color: var(--secondary);
+      box-shadow: var(--shadow-md);
     }
 
     /* Conversation styles */
