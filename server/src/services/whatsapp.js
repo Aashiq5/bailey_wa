@@ -259,6 +259,14 @@ class WhatsAppService {
       // Handle special cases
       if (num.includes('status@broadcast')) return 'status';
       
+      // Handle @lid (LinkedIn Identity Domain) - these are encoded identifiers, not phone numbers
+      // We need to get the actual phone number from participant metadata
+      if (num.includes('@lid')) {
+        console.log('LID format detected, need to resolve actual number:', num);
+        // Return the LID as-is for now - we'll need participant metadata to resolve
+        return num;
+      }
+      
       // Extract number from JID format: "916369124116:15@s.whatsapp.net" or "916369124116@s.whatsapp.net"
       let cleaned = num;
       
@@ -299,7 +307,7 @@ class WhatsAppService {
       senderName = cleanNumber(senderJid);
     }
     
-    // Get group name - fetch if not in cache
+    // Get group name and resolve @lid participants - fetch if not in cache
     let groupName = null;
     if (isGroup) {
       // Try from cache first
@@ -320,6 +328,31 @@ class WhatsAppService {
         } catch (e) {
           console.log('Could not fetch group metadata:', e.message);
           groupName = 'Group';
+        }
+      }
+      
+      // If sender has @lid format, try to resolve from group participants
+      if (senderJid.includes('@lid')) {
+        try {
+          const groupMeta = await this.sock.groupMetadata(jid);
+          const participant = groupMeta?.participants?.find(p => p.id === senderJid);
+          
+          // Some participants may have a 'jid' field with the actual phone number
+          // Or we can try to get it from the contact store
+          if (participant) {
+            console.log('Found LID participant:', participant);
+            
+            // Try to get actual JID/number from participant
+            // Baileys may store the actual number in the contact
+            const actualJid = participant.jid || participant.id;
+            if (actualJid && !actualJid.includes('@lid')) {
+              senderJid = actualJid;
+              senderName = cleanNumber(senderJid);
+              console.log('Resolved LID to actual number:', senderJid);
+            }
+          }
+        } catch (e) {
+          console.log('Could not resolve LID participant:', e.message);
         }
       }
     }
