@@ -234,10 +234,22 @@ class WhatsAppService {
       senderName = msg.pushName || null;
     }
     
-    // Clean up weird phone numbers (remove :XX suffix from JID)
+    // Clean up weird phone numbers (remove :XX suffix from JID and format)
     const cleanNumber = (num) => {
       if (!num) return '';
-      return num.split('@')[0].split(':')[0];
+      // Extract number from JID format: "916369124116:15@s.whatsapp.net" or "916369124116@s.whatsapp.net"
+      let cleaned = num.split('@')[0]; // Remove @s.whatsapp.net or @g.us
+      
+      // If there's a colon, take only the part before it
+      if (cleaned.includes(':')) {
+        cleaned = cleaned.split(':')[0];
+      }
+      
+      // Remove any non-digit characters except +
+      cleaned = cleaned.replace(/[^\d+]/g, '');
+      
+      // Add + prefix if not already there
+      return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
     };
     
     // Try to get name from contacts if pushName not available
