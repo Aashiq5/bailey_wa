@@ -1540,6 +1540,9 @@
           const normalized = normalizeNumber(msg.senderNumber);
           if (!normalized) continue; // Skip @lid format
           
+          // Skip numbers that are 15 digits or longer (likely corrupted @lid numbers)
+          if (normalized.length >= 15) continue;
+          
           const existing = contactsFromMessages.get(normalized);
           if (!existing) {
             contactsFromMessages.set(normalized, {
