@@ -1700,6 +1700,11 @@
           const numberLink = senderNumber ? `<span class="sender-number" onclick="selectContactFromMessage(event, '${senderNumber}')">(${senderNumber})</span>` : '';
           const groupLink = `<span class="group-tag" onclick="selectGroupFromMessage(event, '${escapeHtml(msg.from)}')">👪 ${escapeHtml(msg.groupName)}</span>`;
           senderDisplay = `${msg.sender} ${numberLink} • ${groupLink}`;
+        } else if (!msg.fromMe && msg.senderNumber) {
+          // For individual messages, show name with clickable number
+          const senderNumber = msg.senderNumber;
+          const numberLink = `<span class="sender-number" onclick="selectContactFromMessage(event, '${senderNumber}')">(${senderNumber})</span>`;
+          senderDisplay = `${msg.sender} ${numberLink}`;
         }
         
         // Build media HTML
