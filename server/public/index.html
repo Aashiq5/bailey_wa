@@ -1271,6 +1271,16 @@
         const res = await fetch('/api/messages?limit=50');
         if (res.ok) {
           messages = await res.json();
+          
+          // Filter out invalid messages with @lid or corrupted numbers
+          messages = messages.filter(msg => {
+            if (!msg.senderNumber) return true; // Keep messages without senderNumber check
+            if (msg.senderNumber.includes('@lid')) return false; // Remove @lid
+            const normalized = msg.senderNumber.replace(/\D/g, '');
+            if (normalized.length >= 15) return false; // Remove 15+ digit numbers
+            return true;
+          });
+          
           renderConversationList();
         }
       } catch (error) {
@@ -1536,12 +1546,19 @@
       // Get unique contacts from messages (people who messaged)
       const contactsFromMessages = new Map();
       for (const msg of messages) {
+        // Skip if no sender number or if it's from the user
         if (!msg.fromMe && msg.senderNumber) {
+          // Skip if senderNumber is just empty string or whitespace
+          if (!msg.senderNumber.trim()) continue;
+          
           const normalized = normalizeNumber(msg.senderNumber);
           if (!normalized) continue; // Skip @lid format
           
           // Skip numbers that are 15 digits or longer (likely corrupted @lid numbers)
           if (normalized.length >= 15) continue;
+          
+          // Skip if normalized is less than 10 digits (invalid number)
+          if (normalized.length < 10) continue;
           
           const existing = contactsFromMessages.get(normalized);
           if (!existing) {
