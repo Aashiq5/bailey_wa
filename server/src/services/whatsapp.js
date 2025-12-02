@@ -347,8 +347,16 @@ class WhatsAppService {
             const actualJid = participant.jid || participant.id;
             if (actualJid && !actualJid.includes('@lid')) {
               senderJid = actualJid;
-              senderName = cleanNumber(senderJid);
               console.log('Resolved LID to actual number:', senderJid);
+              
+              // Re-check for contact name with the resolved JID
+              const contact = this.contacts.get(senderJid);
+              if (contact?.name || contact?.notify || contact?.verifiedName) {
+                senderName = contact.name || contact.notify || contact.verifiedName;
+              } else if (!senderName) {
+                // Only use number if we still don't have a name
+                senderName = cleanNumber(senderJid);
+              }
             }
           }
         } catch (e) {
