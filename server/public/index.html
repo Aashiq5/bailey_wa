@@ -1525,25 +1525,50 @@
     function renderContacts() {
       const container = document.getElementById('contactsList');
       
+      // Helper to normalize phone numbers (remove + and non-digits)
+      const normalizeNumber = (num) => {
+        if (!num) return '';
+        // Skip @lid format numbers
+        if (num.includes('@lid')) return '';
+        return num.replace(/\D/g, ''); // Remove all non-digits
+      };
+      
       // Get unique contacts from messages (people who messaged)
       const contactsFromMessages = new Map();
       for (const msg of messages) {
         if (!msg.fromMe && msg.senderNumber) {
-          const key = msg.senderNumber;
-          if (!contactsFromMessages.has(key)) {
-            contactsFromMessages.set(key, {
+          const normalized = normalizeNumber(msg.senderNumber);
+          if (!normalized) continue; // Skip @lid format
+          
+          const existing = contactsFromMessages.get(normalized);
+          if (!existing) {
+            contactsFromMessages.set(normalized, {
               name: msg.sender,
               number: msg.senderNumber,
-              fromGroup: msg.isGroup ? msg.groupName : null
+              fromGroups: msg.isGroup ? [msg.groupName] : []
             });
+          } else {
+            // Update with better format (prefer +XXX format) and collect group names
+            if (msg.senderNumber.startsWith('+') && !existing.number.startsWith('+')) {
+              existing.number = msg.senderNumber;
+            }
+            if (msg.isGroup && !existing.fromGroups.includes(msg.groupName)) {
+              existing.fromGroups.push(msg.groupName);
+            }
           }
         }
       }
       
       // Merge with regular contacts
       const allContacts = [...contacts];
-      for (const [number, info] of contactsFromMessages) {
-        if (!allContacts.find(c => c.number === number)) {
+      for (const [normalized, info] of contactsFromMessages) {
+        const existingIndex = allContacts.findIndex(c => normalizeNumber(c.number) === normalized);
+        if (existingIndex >= 0) {
+          // Merge group info into existing contact
+          if (info.fromGroups.length > 0) {
+            allContacts[existingIndex].fromGroups = info.fromGroups;
+          }
+        } else {
           allContacts.push(info);
         }
       }
@@ -1554,9 +1579,12 @@
       }
 
       container.innerHTML = allContacts.map(contact => {
-        const subtitle = contact.fromGroup 
-          ? `${contact.number} • 👪 ${contact.fromGroup}`
-          : contact.number;
+        let subtitle = contact.number;
+        if (contact.fromGroups && contact.fromGroups.length > 0) {
+          subtitle += ' • 👪 ' + contact.fromGroups.join(', ');
+        } else if (contact.fromGroup) {
+          subtitle += ' • 👪 ' + contact.fromGroup;
+        }
         
         return `
           <div class="list-item" onclick="selectContact('${contact.number}')">
