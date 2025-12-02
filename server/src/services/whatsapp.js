@@ -159,6 +159,8 @@ class WhatsAppService {
               }
               
               const messageData = await this.parseMessage(msg);
+              if (!messageData) continue; // Skip unresolved @lid messages
+              
               // Avoid duplicates
               if (!this.messages.find(m => m.id === messageData.id)) {
                 this.messages.push(messageData);
@@ -187,6 +189,8 @@ class WhatsAppService {
               }
               
               const messageData = await this.parseMessage(msg);
+              if (!messageData) continue; // Skip unresolved @lid messages
+              
               // Store raw message for download
               this.rawMessages.set(messageData.id, msg);
               this.messages.unshift(messageData);
@@ -395,12 +399,20 @@ class WhatsAppService {
       senderName = 'You';
     }
     
+    // Skip messages from unresolved @lid participants (couldn't get real number)
+    if (!fromMe && senderJid.includes('@lid')) {
+      console.log('Skipping message from unresolved @lid participant:', senderJid);
+      return null;
+    }
+    
+    const cleanedNumber = cleanNumber(senderJid);
+    
     return {
       id: msg.key.id,
       from: jid,
       fromMe: fromMe,
       sender: senderName,
-      senderNumber: cleanNumber(senderJid),
+      senderNumber: cleanedNumber,
       isGroup,
       groupId: isGroup ? jid : null,
       groupName: groupName,
