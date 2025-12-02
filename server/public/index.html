@@ -730,6 +730,54 @@
       margin-left: 10px;
     }
 
+    /* Chat Input */
+    .chat-input-container {
+      display: flex;
+      gap: 10px;
+      padding: 12px 20px;
+      background: white;
+      border-top: 1px solid var(--border);
+      position: sticky;
+      bottom: 0;
+    }
+
+    #chatInput {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    #chatInput:focus {
+      border-color: var(--primary);
+    }
+
+    .send-chat-btn {
+      width: 48px;
+      height: 48px;
+      border: none;
+      border-radius: 50%;
+      background: var(--secondary);
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .send-chat-btn:hover {
+      background: #20c55e;
+      transform: scale(1.05);
+    }
+
+    .send-chat-btn:active {
+      transform: scale(0.95);
+    }
+
     /* Responsive */
     @media (max-width: 600px) {
       .header h1 {
@@ -831,6 +879,10 @@
             <span id="conversationTitle">Chat</span>
           </div>
           <div id="messagesList" class="message-list">
+          </div>
+          <div class="chat-input-container">
+            <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="handleChatInputKeypress(event)">
+            <button class="send-chat-btn" onclick="sendChatMessage()">📤</button>
           </div>
         </div>
       </div>
@@ -1292,7 +1344,52 @@
     function backToList() {
       document.getElementById('conversationList').style.display = 'block';
       document.getElementById('conversationView').style.display = 'none';
+      document.getElementById('chatInput').value = '';
       currentConversation = null;
+    }
+
+    // Send message from chat view
+    async function sendChatMessage() {
+      if (!currentConversation) return;
+      
+      const input = document.getElementById('chatInput');
+      const message = input.value.trim();
+      
+      if (!message) {
+        showToast('Please enter a message', 'error');
+        return;
+      }
+      
+      try {
+        const isGroup = currentConversation.isGroup;
+        const to = currentConversation.id;
+        
+        const res = await fetch('/api/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to, message, isGroup })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+          showToast('Message sent!', 'success');
+          input.value = '';
+          // Optionally refresh messages after a short delay
+          setTimeout(() => loadMessages(), 500);
+        } else {
+          showToast(data.error || 'Failed to send', 'error');
+        }
+      } catch (error) {
+        showToast('Error sending message: ' + error.message, 'error');
+      }
+    }
+
+    // Handle Enter key in chat input
+    function handleChatInputKeypress(event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+      }
     }
 
     function toggleChatView() {
@@ -1323,20 +1420,50 @@
 
     function renderContacts() {
       const container = document.getElementById('contactsList');
-      if (contacts.length === 0) {
+      
+      // Get unique contacts from messages (people who messaged)
+      const contactsFromMessages = new Map();
+      for (const msg of messages) {
+        if (!msg.fromMe && msg.senderNumber) {
+          const key = msg.senderNumber;
+          if (!contactsFromMessages.has(key)) {
+            contactsFromMessages.set(key, {
+              name: msg.sender,
+              number: msg.senderNumber,
+              fromGroup: msg.isGroup ? msg.groupName : null
+            });
+          }
+        }
+      }
+      
+      // Merge with regular contacts
+      const allContacts = [...contacts];
+      for (const [number, info] of contactsFromMessages) {
+        if (!allContacts.find(c => c.number === number)) {
+          allContacts.push(info);
+        }
+      }
+      
+      if (allContacts.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>No contacts found</p></div>';
         return;
       }
 
-      container.innerHTML = contacts.map(contact => `
-        <div class="list-item" onclick="selectContact('${contact.number}')">
-          <div class="avatar">${(contact.name || contact.number).charAt(0).toUpperCase()}</div>
-          <div class="list-item-content">
-            <div class="list-item-title">${contact.name || contact.number}</div>
-            <div class="list-item-subtitle">${contact.number}</div>
+      container.innerHTML = allContacts.map(contact => {
+        const subtitle = contact.fromGroup 
+          ? `${contact.number} • 👪 ${contact.fromGroup}`
+          : contact.number;
+        
+        return `
+          <div class="list-item" onclick="selectContact('${contact.number}')">
+            <div class="avatar">${(contact.name || contact.number).charAt(0).toUpperCase()}</div>
+            <div class="list-item-content">
+              <div class="list-item-title">${contact.name || contact.number}</div>
+              <div class="list-item-subtitle">${subtitle}</div>
+            </div>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     function renderGroups() {

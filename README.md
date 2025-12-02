@@ -123,6 +123,52 @@ cron.schedule('*/30 * * * *', async () => { ... });
 
 ⚠️ **Important**: This project uses Baileys which is not affiliated with WhatsApp. Use responsibly and respect WhatsApp's Terms of Service. Do not use for spam or automated bulk messaging.
 
+## Termux Setup (Android)
+
+### First Time Setup
+
+```bash
+# Install Node.js
+pkg update && pkg install nodejs git -y
+
+# Clone the repo
+git clone https://github.com/Aashiq5/bailey_wa.git
+cd bailey_wa/server
+npm install
+
+# Start manually
+node src/index.js
+```
+
+### Auto-Start on Termux Launch
+
+Run this once to set up auto-start:
+
+```bash
+# Create .bashrc if it doesn't exist
+mkdir -p ~/.termux
+
+# Add auto-start to bash profile
+echo '
+# Auto-start Bailey WA
+if [ -d ~/bailey_wa ]; then
+  cd ~/bailey_wa/server
+  git fetch origin 2>/dev/null
+  git reset --hard origin/master 2>/dev/null
+  echo "🚀 Starting Bailey WA..."
+  node src/index.js
+fi
+' >> ~/.bashrc
+```
+
+Now every time you open Termux, Bailey WA will:
+1. Pull latest code from GitHub
+2. Start the WhatsApp server automatically
+
+### Access the Web UI
+
+Open in your phone browser: `http://localhost:3000`
+
 ## License
 
 MIT
