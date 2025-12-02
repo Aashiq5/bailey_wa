@@ -262,9 +262,9 @@ class WhatsAppService {
       // Handle @lid (LinkedIn Identity Domain) - these are encoded identifiers, not phone numbers
       // We need to get the actual phone number from participant metadata
       if (num.includes('@lid')) {
-        console.log('LID format detected, need to resolve actual number:', num);
-        // Return the LID as-is for now - we'll need participant metadata to resolve
-        return num;
+        console.log('LID format detected, filtering out:', num);
+        // Return empty to filter out @lid entries from contacts
+        return '';
       }
       
       // Extract number from JID format: "916369124116:15@s.whatsapp.net" or "916369124116@s.whatsapp.net"
@@ -290,8 +290,8 @@ class WhatsAppService {
         return num; // Return original if suspicious
       }
       
-      // Add + prefix
-      return `+${cleaned}`;
+      // Return without + prefix to avoid issues with message sending
+      return cleaned;
     };
     
     // Try to get name from contacts if pushName not available
