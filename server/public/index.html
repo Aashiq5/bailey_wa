@@ -991,6 +991,9 @@
       <div id="contacts" class="tab-content">
         <div class="toolbar">
           <button class="toolbar-btn" onclick="loadContacts()">🔄 Refresh</button>
+          <button class="toolbar-btn" onclick="showAddContactDialog()">➕ Add Contact</button>
+          <button class="toolbar-btn" onclick="document.getElementById('vcardInput').click()">📥 Import vCard</button>
+          <input type="file" id="vcardInput" accept=".vcf,.vcard" style="display: none;" onchange="importVCard(event)">
         </div>
         <div id="contactsList" class="list">
           <div class="empty-state">
@@ -1086,6 +1089,25 @@
             <span>📤</span> Send Message
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Contact Dialog -->
+  <div id="addContactDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 24px; border-radius: 12px; max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.2);">
+      <h3 style="margin: 0 0 20px 0; color: var(--primary);">Add New Contact</h3>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="newContactName" placeholder="Enter contact name" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px;">
+      </div>
+      <div class="form-group" style="margin-top: 16px;">
+        <label>Phone Number</label>
+        <input type="tel" id="newContactPhone" placeholder="e.g., 916369124116" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px;">
+      </div>
+      <div style="display: flex; gap: 12px; margin-top: 24px;">
+        <button onclick="saveNewContact()" style="flex: 1; padding: 12px; background: var(--secondary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Save</button>
+        <button onclick="hideAddContactDialog()" style="flex: 1; padding: 12px; background: var(--border); color: var(--text-primary); border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Cancel</button>
       </div>
     </div>
   </div>
@@ -2055,6 +2077,139 @@
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
     }
+
+    // Contact Management Functions
+    function showAddContactDialog() {
+      document.getElementById('addContactDialog').style.display = 'flex';
+      document.getElementById('newContactName').value = '';
+      document.getElementById('newContactPhone').value = '';
+      document.getElementById('newContactName').focus();
+    }
+
+    function hideAddContactDialog() {
+      document.getElementById('addContactDialog').style.display = 'none';
+    }
+
+    function saveNewContact() {
+      const name = document.getElementById('newContactName').value.trim();
+      const phone = document.getElementById('newContactPhone').value.trim();
+
+      if (!name || !phone) {
+        showToast('Please enter both name and phone number', 'error');
+        return;
+      }
+
+      // Normalize phone number (remove non-digits)
+      const normalizedPhone = phone.replace(/\D/g, '');
+      if (normalizedPhone.length < 10 || normalizedPhone.length > 15) {
+        showToast('Invalid phone number length (10-15 digits required)', 'error');
+        return;
+      }
+
+      // Add to contacts array
+      const newContact = {
+        name: name,
+        number: normalizedPhone,
+        fromGroups: []
+      };
+
+      // Check if already exists
+      const exists = contacts.find(c => c.number.replace(/\D/g, '') === normalizedPhone);
+      if (exists) {
+        showToast('Contact already exists', 'error');
+        return;
+      }
+
+      contacts.push(newContact);
+      renderContacts();
+      hideAddContactDialog();
+      showToast('Contact added successfully', 'success');
+    }
+
+    // Import vCard contacts
+    function importVCard(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const vcardText = e.target.result;
+        const importedContacts = parseVCard(vcardText);
+        
+        if (importedContacts.length === 0) {
+          showToast('No contacts found in vCard file', 'error');
+          return;
+        }
+
+        let addedCount = 0;
+        for (const contact of importedContacts) {
+          const normalized = contact.number.replace(/\D/g, '');
+          if (normalized.length >= 10 && normalized.length <= 15) {
+            const exists = contacts.find(c => c.number.replace(/\D/g, '') === normalized);
+            if (!exists) {
+              contacts.push({
+                name: contact.name,
+                number: normalized,
+                fromGroups: []
+              });
+              addedCount++;
+            }
+          }
+        }
+
+        renderContacts();
+        showToast(`Imported ${addedCount} contacts from vCard`, 'success');
+      };
+      reader.readAsText(file);
+      
+      // Reset file input
+      event.target.value = '';
+    }
+
+    // Parse vCard format (supports Google Contacts export)
+    function parseVCard(vcardText) {
+      const contacts = [];
+      const vcards = vcardText.split('BEGIN:VCARD');
+      
+      for (const vcard of vcards) {
+        if (!vcard.trim()) continue;
+        
+        let name = '';
+        let phone = '';
+        
+        const lines = vcard.split('\n');
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          
+          // Parse name (FN field)
+          if (trimmedLine.startsWith('FN:')) {
+            name = trimmedLine.substring(3).trim();
+          }
+          
+          // Parse phone (TEL field)
+          if (trimmedLine.includes('TEL')) {
+            // Extract phone number after the colon
+            const colonIndex = trimmedLine.lastIndexOf(':');
+            if (colonIndex !== -1) {
+              phone = trimmedLine.substring(colonIndex + 1).trim();
+            }
+          }
+        }
+        
+        if (name && phone) {
+          contacts.push({ name, number: phone });
+        }
+      }
+      
+      return contacts;
+    }
+
+    // Close dialog when clicking outside
+    document.getElementById('addContactDialog').addEventListener('click', function(e) {
+      if (e.target === this) {
+        hideAddContactDialog();
+      }
+    });
   </script>
 </body>
 </html>
